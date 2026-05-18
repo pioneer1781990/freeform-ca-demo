@@ -155,7 +155,7 @@ class Orchestrator:
 
         # Step 1 — glossary gap → ask the user inline (Change 1)
         gaps = self._glossary_gaps(question)
-        if gaps and not self._verified_match(question):
+        if gaps and self._verified_match(question) is None:
             # First check if user has a personal memory for this term
             personal_def = self._lookup_user_definition(gaps[0], user_id)
             if personal_def is None:
