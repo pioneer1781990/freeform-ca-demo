@@ -6,7 +6,23 @@ Two surfaces:
 - **Ask** (business user) — Gemini-Enterprise-styled chat
 - **Studio** (analyst) — BQ-Studio-styled flywheel dashboard with recommendations
 
-## Quick start (from a fresh clone)
+## Run in browser via GitHub Codespaces (no local install)
+
+See [CODESPACES.md](CODESPACES.md) for the full guide. TL;DR:
+
+1. https://github.com/pioneer1781990/freeform-ca-demo → **Code → Codespaces → Create**
+2. In the Codespaces terminal:
+   ```bash
+   gcloud auth login --no-launch-browser
+   gcloud auth application-default login --no-launch-browser
+   gcloud config set project new-project-495419
+   cp .env.example .env  # edit ANTHROPIC_API_KEY in the file tree
+   source .env
+   ./run_demo.sh
+   ```
+3. Codespaces auto-forwards port 8501. Click the **Open in Browser** popup.
+
+## Quick start (local install)
 
 ```bash
 git clone https://github.com/<you>/freeform-ca-demo.git
