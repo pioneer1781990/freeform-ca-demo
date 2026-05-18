@@ -1,0 +1,38 @@
+# Secrets — never commit
+.env
+.env.local
+*.pem
+*.key
+~/.kaggle/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data
+data/
+~/olist_data/
+*.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+/tmp/streamlit.log
+/tmp/freeform_session_start.txt
