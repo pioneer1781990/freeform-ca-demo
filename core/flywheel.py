@@ -31,26 +31,39 @@ class Flywheel:
         ])).result()
         if correction:
             key = self._guess_memory_key(correction)
-            row = {
-                "id": str(uuid.uuid4()), "user_id": user_id, "memory_type":"user",
-                "key": key, "value": correction, "source_question": query_id,
-                "promoted_to_semantic": False,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            self.s.bq.insert_rows_json(f"{cfg.PROJECT_ID}.{cfg.DATASET}._flywheel_memory", [row])
+            sql_mem = f"""
+            INSERT INTO {cfg.t('_flywheel_memory')}
+              (id, user_id, memory_type, key, value, source_question,
+               promoted_to_semantic, promotion_requested, promoted_at, created_at)
+            VALUES (GENERATE_UUID(), @uid, 'user', @key, @val, @q,
+                    FALSE, FALSE, NULL, CURRENT_TIMESTAMP())
+            """
+            self.s.bq.query(sql_mem, job_config=bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("uid","STRING",user_id),
+                bigquery.ScalarQueryParameter("key","STRING",key),
+                bigquery.ScalarQueryParameter("val","STRING",correction),
+                bigquery.ScalarQueryParameter("q","STRING",query_id),
+            ])).result()
 
     def save_user_definition(self, term: str, definition: str, user_id: str, original_question: str):
-        """Persist a definition the user gave inline for a missing glossary term."""
+        """Persist a definition via SQL DML INSERT (NOT streaming insert) so the
+        row lands in permanent storage and can be UPDATE'd by promote without
+        the 30-min streaming-buffer lockout."""
         from core.orchestrator import GLOSSARY_GUARD_TERMS
         key = GLOSSARY_GUARD_TERMS.get(term.lower(), self._guess_memory_key(definition))
-        row = {
-            "id": str(__import__('uuid').uuid4()), "user_id": user_id,
-            "memory_type": "user", "key": key, "value": definition,
-            "source_question": original_question, "promoted_to_semantic": False,
-            "promotion_requested": False, "promoted_at": None,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.s.bq.insert_rows_json(f"{cfg.PROJECT_ID}.{cfg.DATASET}._flywheel_memory", [row])
+        sql = f"""
+        INSERT INTO {cfg.t('_flywheel_memory')}
+          (id, user_id, memory_type, key, value, source_question,
+           promoted_to_semantic, promotion_requested, promoted_at, created_at)
+        VALUES (GENERATE_UUID(), @uid, 'user', @key, @val, @q,
+                FALSE, FALSE, NULL, CURRENT_TIMESTAMP())
+        """
+        self.s.bq.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("uid","STRING",user_id),
+            bigquery.ScalarQueryParameter("key","STRING",key),
+            bigquery.ScalarQueryParameter("val","STRING",definition),
+            bigquery.ScalarQueryParameter("q","STRING",original_question),
+        ])).result()
         return key
 
     def request_memory_promotion(self, memory_key: str, user_id: str):
