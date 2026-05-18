@@ -154,24 +154,27 @@ class Orchestrator:
             return ans
 
         # Step 1 — glossary gap → ask the user inline (Change 1)
+        # Guard-term ambiguity is louder than any verified-query match:
+        # we always ask for the user's definition first if the term has
+        # no glossary entry and no personal memory.
         gaps = self._glossary_gaps(question)
-        if gaps and self._verified_match(question) is None:
-            # First check if user has a personal memory for this term
+        if gaps:
+            # If user has a personal memory for this term, fall through and use it
             personal_def = self._lookup_user_definition(gaps[0], user_id)
             if personal_def is None:
-                routed = self._route_to_agent(question)
-                if routed is None:
-                    term = gaps[0]
-                    ans = Answer(
-                        question=question,
-                        path_taken="needs_definition",
-                        narrative=(f"I don't know what **{term}** means yet. Can you tell me — what should it be?\n\n"
-                                   f"_Your definition stays with you. You can choose to share it with your team afterwards._"),
-                        confidence=0.0,
-                        needs_definition=term,
-                    )
-                    self._log(ans, user_id)
-                    return ans
+                # Don't route to an agent for an undefined business term —
+                # the agent doesn't know either.
+                term = gaps[0]
+                ans = Answer(
+                    question=question,
+                    path_taken="needs_definition",
+                    narrative=(f"I don't know what **{term}** means yet. Can you tell me — what should it be?\n\n"
+                               f"_Your definition stays with you. You can choose to share it with your team afterwards._"),
+                    confidence=0.0,
+                    needs_definition=term,
+                )
+                self._log(ans, user_id)
+                return ans
 
         # Step 2 — try agent route first
         routed = self._route_to_agent(question)
