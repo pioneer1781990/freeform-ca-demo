@@ -1,26 +1,22 @@
 # Freeform CA Demo — Cymbal Retail
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?repo=pioneer1781990/freeform-ca-demo&ref=main)
+
+> **🚀 To run the demo, click the badge above** — full launch steps in **[START_HERE.md](START_HERE.md)**.
+
 A demo of the **Conversational Analytics (CA) API on BigQuery**, built as a self-improving "flywheel" for a fictional retailer (Cymbal Retail). Shows agent routing, glossary-driven hedging, memory feedback loops, ObjectRef for unstructured data, BQ Property Graph, and progressive recommendations.
 
 Two surfaces:
 - **Ask** (business user) — Gemini-Enterprise-styled chat
 - **Studio** (analyst) — BQ-Studio-styled flywheel dashboard with recommendations
 
-## Run in browser via GitHub Codespaces (no local install)
+## How to start
 
-See [CODESPACES.md](CODESPACES.md) for the full guide. TL;DR:
-
-1. https://github.com/pioneer1781990/freeform-ca-demo → **Code → Codespaces → Create**
-2. In the Codespaces terminal:
-   ```bash
-   gcloud auth login --no-launch-browser
-   gcloud auth application-default login --no-launch-browser
-   gcloud config set project new-project-495419
-   cp .env.example .env  # edit ANTHROPIC_API_KEY in the file tree
-   source .env
-   ./run_demo.sh
-   ```
-3. Codespaces auto-forwards port 8501. Click the **Open in Browser** popup.
+| Where | Doc | TL;DR |
+|---|---|---|
+| Browser (Codespaces) — **recommended for the demo** | [START_HERE.md](START_HERE.md) | Click the Codespaces badge above |
+| Browser (Codespaces) — detailed | [CODESPACES.md](CODESPACES.md) | Full terminal commands |
+| Local laptop | Section below | `./run_demo.sh` after one-time setup |
 
 ## Quick start (local install)
 
