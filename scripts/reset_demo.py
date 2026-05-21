@@ -129,37 +129,20 @@ def _undo_dataplex_term(identifier: str) -> bool:
 
 
 def _undo_graph_edges(bq: bigquery.Client) -> bool:
-    """Re-run the BASE graph DDL from phase_c_graph.sql — overwrites with
-    the original two edges (purchase_edges, stocking_edges) only.
+    """Restore the property graph to the demo baseline: ONLY the
+    Customer → Purchased → Product edge. The DC + StockedAt edge is
+    intentionally omitted so the next demo's 'Add to graph' click produces
+    a visible jump in the BQ Studio Graph tab (2 nodes/1 edge → 3 nodes/2).
     """
-    if not GRAPH_DDL_PATH.exists():
-        _log(f"  ✗ graph DDL not found at {GRAPH_DDL_PATH}")
-        return False
     try:
-        ddl = GRAPH_DDL_PATH.read_text()
+        # Import lazily so this script doesn't require the package on cold runs
+        from core import graph_ops
+        ok = graph_ops.reset_to_baseline()
+        _log(f"  ✓ graph reset to baseline (Customer → Purchased → Product)")
+        return ok
     except Exception as e:
-        _log(f"  ✗ could not read graph DDL: {e}")
+        _log(f"  · graph baseline reset warning: {str(e).splitlines()[0][:160]}")
         return False
-
-    # The file has multiple statements separated by ';'. Run each, tolerating
-    # the harmless 'ALTER TABLE ... ADD PRIMARY KEY' errors that occur when
-    # the PK already exists.
-    statements = [s.strip() for s in ddl.split(";") if s.strip() and not s.strip().startswith("--")]
-    n_ok = 0
-    for stmt in statements:
-        try:
-            bq.query(stmt, location=cfg.BQ_LOCATION).result()
-            n_ok += 1
-        except gcp_exceptions.BadRequest as e:
-            # Pre-existing primary key constraint is fine.
-            if "primary key" in str(e).lower() or "already" in str(e).lower():
-                n_ok += 1
-                continue
-            _log(f"  · graph stmt warning: {str(e).splitlines()[0][:160]}")
-        except Exception as e:
-            _log(f"  · graph stmt warning: {str(e).splitlines()[0][:160]}")
-    _log(f"  ✓ replayed base graph DDL ({n_ok}/{len(statements)} statements ok)")
-    return True
 
 
 def _undo_vector_table(bq: bigquery.Client, identifier: str) -> bool:

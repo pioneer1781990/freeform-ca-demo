@@ -119,37 +119,40 @@ def _record_provenance(bq: bigquery.Client, edges: List[str]) -> None:
         ).result()
 
 
-def enhance_graph(edges_to_add: List[str]) -> bool:
-    """Re-create the property graph with the requested edges merged in.
+def reset_to_baseline() -> bool:
+    """Restore the graph to the demo-baseline state: ONLY the Customer →
+    Purchased → Product edge. The DC + StockedAt edge is intentionally
+    omitted so that the demo's 'Add to graph' click produces a visible change
+    in the BQ Studio Graph tab (2 nodes/1 edge → 3 nodes/2 edges)."""
+    return _rebuild(["Customer → Purchased → Product"])
 
-    Idempotent: edges already present in the live graph are simply re-declared
-    via CREATE OR REPLACE. Unknown edge specs raise ValueError.
+
+def enhance_graph(edges_to_add: List[str]) -> bool:
+    """Re-create the property graph with the requested edges merged into the
+    baseline. Unlike the previous implementation, this does NOT force-include
+    StockedAt — it gets added only when the caller asks for it.
 
     Args:
         edges_to_add: list of canonical edge strings, e.g.
             ["Customer → Purchased → Product",
              "Product → StockedAt → DistributionCenter"]
-
-    Returns:
-        True on success.
     """
-    bq = bigquery.Client(project=cfg.PROJECT_ID, location=cfg.BQ_LOCATION)
-
-    # Always include the canonical set of edges that already exist in the live
-    # graph, plus any requested additions. Deduplicate by canonical key.
-    canonical_existing = [
-        "Customer → Purchased → Product",
-        "Product → StockedAt → DistributionCenter",
-    ]
+    # Always include the baseline Purchased edge; merge in anything requested.
     requested = [_normalize(s) for s in (edges_to_add or [])]
-    final_edges: List[str] = []
-    for e in canonical_existing + requested:
+    final_edges: List[str] = ["Customer → Purchased → Product"]
+    for e in requested:
         if e not in final_edges:
             final_edges.append(e)
+    return _rebuild(final_edges)
+
+
+def _rebuild(final_edges: List[str]) -> bool:
+    bq = bigquery.Client(project=cfg.PROJECT_ID, location=cfg.BQ_LOCATION)
 
     # Validate and build fragments.
     view_sqls: List[str] = []
     edge_frags: List[str] = []
+    nodes_in_use: set = set()
     for spec in final_edges:
         builder = _EDGE_BUILDERS.get(spec)
         if builder is None:
@@ -161,16 +164,38 @@ def enhance_graph(edges_to_add: List[str]) -> bool:
         if parts.get("view_sql"):
             view_sqls.append(parts["view_sql"])
         edge_frags.append(parts["edge_frag"])
+        # Track which node tables appear in this edge to scope the NODE TABLES
+        if "Customer" in spec: nodes_in_use.add("Customer")
+        if "Product"  in spec: nodes_in_use.add("Product")
+        if "DistributionCenter" in spec or "DC" in spec: nodes_in_use.add("DC")
 
     # 1) (Re)create supporting views.
     for vsql in view_sqls:
         bq.query(vsql).result()
 
-    # 2) Re-create the property graph with all edges.
+    # Build NODE TABLES clause to include only nodes referenced by edges.
+    node_fragments = []
+    if "Customer" in nodes_in_use:
+        node_fragments.append(
+            f"    {cfg.t('users')} AS Customer\n"
+            f"      KEY (id)\n      LABEL Customer\n"
+            f"      PROPERTIES (id, first_name, last_name, age, gender, country, city, traffic_source)")
+    if "Product" in nodes_in_use:
+        node_fragments.append(
+            f"    {cfg.t('products')} AS Product\n"
+            f"      KEY (id)\n      LABEL Product\n"
+            f"      PROPERTIES (id, name, brand, category, department, retail_price, cost)")
+    if "DC" in nodes_in_use:
+        node_fragments.append(
+            f"    {cfg.t('distribution_centers')} AS DC\n"
+            f"      KEY (id)\n      LABEL DistributionCenter\n"
+            f"      PROPERTIES (id, name, latitude, longitude)")
+
+    # 2) Re-create the property graph with the requested edges + their nodes.
     graph_sql = (
         f"CREATE OR REPLACE PROPERTY GRAPH "
         f"{cfg.t('cymbal_retail_graph')}\n"
-        f"  NODE TABLES (\n{_NODE_TABLES_SQL}\n  )\n"
+        f"  NODE TABLES (\n" + ",\n".join(node_fragments) + "\n  )\n"
         f"  EDGE TABLES (\n"
         + ",\n".join(edge_frags)
         + "\n  )"
