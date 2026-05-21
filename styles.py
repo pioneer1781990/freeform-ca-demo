@@ -1,208 +1,47 @@
-"""Minimal, clean CSS for the demo. Light mode. No platform mimicry."""
+"""Minimal CSS. Style ONLY custom classes we define ourselves.
+Never override font-family, font-weight, or display on Streamlit's own
+component elements — that's what was breaking the expander icons.
+"""
 
-# Shared base — used on both pages.
+# Only style our own classes. Streamlit defaults handle the rest.
 BASE_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-/* Apply Inter only to text content — do NOT override icon fonts */
-.stApp, .stApp p, .stApp span:not([class*="material"]):not([class*="Icon"]):not([class*="icon"]),
-.stApp button:not([class*="material"]):not([class*="Icon"]),
-.stApp input, .stApp textarea, .stApp label, .stApp h1, .stApp h2, .stApp h3,
-.stApp h4, .stApp h5, .stApp h6 {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-}
+/* Hide Streamlit clutter (safe — these are documented testids) */
+header[data-testid="stHeader"] { display: none; }
+[data-testid="stSidebarNav"] { display: none; }
+#MainMenu { visibility: hidden; }
+footer { display: none; }
 
-/* Preserve Material icon fonts wherever Streamlit uses them */
-[class*="material-icons"], [class*="material-symbols"],
-[class*="icon"]:not(.stApp), [data-baseweb] [class*="icon"],
-[data-testid="stExpander"] svg, [data-testid="stExpander"] i {
-  font-family: revert !important;
-}
-/* Code stays mono */
-code, pre, .stCode { font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace !important; }
-
-:root { color-scheme: light !important; }
-
-/* Hide Streamlit chrome */
-header[data-testid="stHeader"] { display: none !important; }
-footer { display: none !important; }
-[data-testid="stSidebarNav"] { display: none !important; }
-#MainMenu { visibility: hidden !important; }
-
-.stApp { background: #fafafa; }
-
-/* Tighten main content */
-.main .block-container {
-  background: #ffffff;
-  padding-top: 2rem;
-  padding-bottom: 6rem;
-  max-width: 880px;
-}
-
-/* Sidebar */
-section[data-testid="stSidebar"] {
-  background: #f7f7f8 !important;
-  border-right: 1px solid #ececec;
-}
-section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
-
-/* Primary button — soft blue */
-.stButton > button[kind="primary"] {
-  background: #2563eb !important;
-  border: 1px solid #2563eb !important;
-  color: white !important;
-  border-radius: 8px !important;
-  font-weight: 500 !important;
-  padding: 8px 16px !important;
-  font-size: 14px !important;
-  box-shadow: none !important;
-}
-.stButton > button[kind="primary"]:hover {
-  background: #1d4ed8 !important; border-color: #1d4ed8 !important;
-}
-
-/* Secondary buttons */
-.stButton > button {
-  background: #ffffff !important;
-  border: 1px solid #e5e7eb !important;
-  color: #111827 !important;
-  border-radius: 8px !important;
-  font-weight: 400 !important;
-  padding: 8px 14px !important;
-  font-size: 14px !important;
-  box-shadow: none !important;
-  min-height: 36px !important;
-}
-.stButton > button:hover {
-  background: #f9fafb !important;
-  border-color: #d1d5db !important;
-}
-
-/* Inputs */
-[data-testid="stTextInput"] input,
-[data-testid="stTextArea"] textarea {
-  background: #ffffff !important;
-  color: #111827 !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 8px !important;
-  font-size: 14px !important;
-}
-
-/* Dataframes — clean light */
-[data-testid="stDataFrame"], [data-testid="stDataFrame"] * {
-  background: #ffffff !important; color: #111827 !important;
-}
-[data-testid="stDataFrame"] {
-  border: 1px solid #e5e7eb !important; border-radius: 8px !important;
-  overflow: hidden;
-}
-[data-testid="stDataFrame"] thead tr,
-[data-testid="stDataFrame"] thead th {
-  background: #f9fafb !important; color: #6b7280 !important;
-  font-weight: 500 !important; font-size: 12px !important;
-  text-transform: uppercase; letter-spacing: .03em;
-}
-[data-testid="stDataFrame"] tbody tr:nth-child(even) { background: #fafafa !important; }
-
-/* Code */
-pre, code, [data-testid="stCodeBlock"] {
-  background: #f9fafb !important; color: #111827 !important;
-  border: 1px solid #e5e7eb !important; border-radius: 8px !important;
-  font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace !important;
-}
-[data-testid="stCodeBlock"] * { color: #111827 !important; }
-
-/* Expanders */
-[data-testid="stExpander"] {
-  background: #ffffff !important;
-  border: 1px solid #ececec !important; border-radius: 8px !important;
-  margin-top: 4px;
-}
-[data-testid="stExpander"] * { color: #111827 !important; }
-[data-testid="stExpander"] summary {
-  padding: 10px 14px !important; font-size: 13px !important; color: #4b5563 !important;
-}
-
-/* Status widget */
-[data-testid="stStatusWidget"], [data-testid="stStatus"] {
-  background: #f5f7fb !important;
-  border: 1px solid #e0e7f3 !important;
-  border-radius: 8px !important;
-  color: #1e3a8a !important;
-}
-[data-testid="stStatusWidget"] *, [data-testid="stStatus"] * {
-  color: #1e3a8a !important;
-}
-
-/* Tabs */
-[data-baseweb="tab-list"] {
-  border-bottom: 1px solid #e5e7eb !important;
-  gap: 8px !important;
-}
-[data-baseweb="tab"] {
-  color: #6b7280 !important;
-  padding: 10px 16px !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-}
-[data-baseweb="tab"][aria-selected="true"] {
-  color: #2563eb !important;
-}
-</style>
-"""
-
-# Ask-page specific.
-ASK_CSS = BASE_CSS + """
-<style>
-/* Chat input — light, rounded */
-[data-testid="stBottomBlockContainer"],
-[data-testid="stBottom"] {
-  background: #ffffff !important;
-  border-top: 1px solid #ececec !important;
-}
-[data-testid="stChatInput"] {
-  background: #ffffff !important;
-  border: 1px solid #d1d5db !important;
-  border-radius: 12px !important;
-  box-shadow: 0 1px 2px rgba(0,0,0,.04);
-}
-[data-testid="stChatInput"] textarea {
-  background: #ffffff !important;
-  font-size: 15px !important;
-  color: #111827 !important;
-}
-
-/* User message — right-aligned soft pill */
+/* Custom user-message bubble (right-aligned soft pill) */
 .user-msg {
+  font-family: 'Inter', -apple-system, sans-serif;
   background: #eef4ff; color: #111827;
   padding: 10px 16px; border-radius: 16px 16px 4px 16px;
   margin: 20px 0 8px auto; max-width: 70%; width: fit-content;
   font-size: 14px; line-height: 1.55;
 }
 
-/* Assistant message wrapper */
-.assist-wrap {
-  margin: 16px 0 6px;
-}
+/* Custom assistant narrative block */
 .assist-narrative {
+  font-family: 'Inter', -apple-system, sans-serif;
   color: #111827; font-size: 15px; line-height: 1.65;
-  margin-bottom: 8px;
+  margin: 8px 0 8px;
 }
 .assist-narrative p { margin: 0 0 12px 0; }
 .assist-narrative strong { font-weight: 600; }
 
-/* Meta line under answer */
+/* Custom meta line under answer */
 .answer-meta {
-  font-size: 12px; color: #9ca3af;
-  margin: 14px 0 6px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 12px; color: #9ca3af; margin: 14px 0 6px;
 }
 
-/* Citation chips */
+/* Custom citation chips */
 .cite-summary {
-  font-size: 12px; color: #6b7280;
-  margin: 6px 0 0;
-  line-height: 1.9;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 12px; color: #6b7280; margin: 6px 0 0; line-height: 1.9;
 }
 .cite-summary .chip {
   display: inline-block; padding: 2px 10px; border-radius: 999px;
@@ -217,40 +56,28 @@ ASK_CSS = BASE_CSS + """
 
 /* Promote banner */
 .promote-banner {
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 13px; color: #78350f;
-  margin: 10px 0 0;
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: #fffbeb; border: 1px solid #fde68a;
+  border-radius: 8px; padding: 10px 14px;
+  font-size: 13px; color: #78350f; margin: 10px 0 0;
 }
 
-/* Greeting */
+/* Empty-state greeting */
 .greeting {
-  text-align: center;
-  margin: 64px 0 28px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  text-align: center; margin: 64px 0 28px;
 }
 .greeting h1 {
-  font-size: 36px;
-  font-weight: 600;
-  color: #111827;
-  margin: 0 0 8px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 36px; font-weight: 600; color: #111827; margin: 0 0 8px;
 }
 .greeting p {
-  color: #6b7280;
-  font-size: 16px;
-  margin: 0;
-}
-
-/* Suggestion chips */
-.main .stButton > button {
-  border-radius: 999px !important;
-  padding: 9px 18px !important;
-  font-size: 13px !important;
+  color: #6b7280; font-size: 16px; margin: 0;
 }
 
 /* Path badge */
 .badge {
+  font-family: 'Inter', -apple-system, sans-serif;
   display: inline-block; padding: 2px 9px; border-radius: 6px;
   font-size: 11px; font-weight: 500; margin-right: 6px;
   background: #f3f4f6; color: #4b5563; border: 1px solid #e5e7eb;
@@ -259,64 +86,48 @@ ASK_CSS = BASE_CSS + """
 .badge-freelance{ background: #fef3c7; color: #92400e; border-color: #fde68a; }
 .badge-refuse   { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
 .badge-asking   { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
-</style>
-"""
 
-# Studio-page specific.
-STUDIO_CSS = BASE_CSS + """
-<style>
-.main .block-container { max-width: 1100px; }
-
+/* Studio-specific custom classes */
 .studio-title {
-  font-size: 26px; font-weight: 600; color: #111827;
-  margin: 0 0 4px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 26px; font-weight: 600; color: #111827; margin: 0 0 4px;
 }
 .studio-sub {
-  font-size: 14px; color: #6b7280;
-  margin: 0 0 32px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 14px; color: #6b7280; margin: 0 0 32px;
 }
-
 .section-title {
-  font-size: 15px; font-weight: 600; color: #111827;
-  margin: 4px 0 12px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 15px; font-weight: 600; color: #111827; margin: 4px 0 12px;
 }
 
-.metric-row {
-  display: flex; gap: 24px;
-  margin: 0 0 24px;
-}
+/* Metric cards */
+.metric-row { display: flex; gap: 24px; margin: 0 0 24px; }
 .metric-card {
-  flex: 1;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 16px 18px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  flex: 1; background: #ffffff; border: 1px solid #e5e7eb;
+  border-radius: 10px; padding: 16px 18px;
 }
 .metric-label {
   font-size: 12px; color: #6b7280;
-  text-transform: uppercase; letter-spacing: .04em;
-  margin: 0 0 6px;
+  text-transform: uppercase; letter-spacing: .04em; margin: 0 0 6px;
 }
-.metric-value {
-  font-size: 26px; font-weight: 600; color: #111827;
-}
+.metric-value { font-size: 26px; font-weight: 600; color: #111827; }
 
+/* Empty state for Studio Recommendations */
 .empty-state {
-  background: #ffffff;
-  border: 1px dashed #d1d5db;
-  border-radius: 12px;
-  padding: 36px;
-  text-align: center;
-  color: #6b7280;
-  font-size: 14px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: #ffffff; border: 1px dashed #d1d5db;
+  border-radius: 12px; padding: 36px;
+  text-align: center; color: #6b7280; font-size: 14px;
 }
 
-/* Agent avatar */
+/* Agent avatar (Studio Agents tab) */
 .agent-avatar {
   width: 36px; height: 36px; border-radius: 50%;
   display: inline-grid; place-items: center;
-  font-size: 14px; font-weight: 600; color: white;
-  margin-right: 10px;
+  font-size: 14px; font-weight: 600; color: white; margin-right: 10px;
+  font-family: 'Inter', -apple-system, sans-serif;
 }
 .av-blue   { background: #3b82f6; }
 .av-green  { background: #10b981; }
@@ -324,13 +135,16 @@ STUDIO_CSS = BASE_CSS + """
 .av-orange { background: #f59e0b; }
 .av-pink   { background: #ec4899; }
 
-/* Glossary / memory cards */
+/* Glossary/memory key-value rows */
 .kv-row {
-  padding: 10px 0; border-bottom: 1px solid #f3f4f6;
-  font-size: 14px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  padding: 10px 0; border-bottom: 1px solid #f3f4f6; font-size: 14px;
 }
 .kv-row:last-child { border-bottom: none; }
 .kv-key { font-weight: 500; color: #111827; }
 .kv-val { color: #4b5563; font-size: 13px; margin-top: 4px; }
 </style>
 """
+
+ASK_CSS = BASE_CSS
+STUDIO_CSS = BASE_CSS
