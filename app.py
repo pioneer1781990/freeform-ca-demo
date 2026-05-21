@@ -624,15 +624,82 @@ with right:
                 st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div style="margin-top:16px;"></div>', unsafe_allow_html=True)
-    if st.button("↺  Reset demo", key="reset_demo", use_container_width=True):
-        SS.history = []
-        SS.studio_recs = []
-        SS.built_today = []
-        SS.post_action_state = {}
-        SS.applied_enrichments = set()
-        SS.initial_recs_loaded = False
-        SS.studio_signals = None
-        sess.reset()
+    if st.button("↺  Reset demo (wipes GCP state too)", key="reset_demo", use_container_width=True):
+        with st.spinner("Resetting GCP state — Dataplex, graph, embeddings, CX agent…"):
+            # 1) UI / session state
+            SS.history = []
+            SS.studio_recs = []
+            SS.built_today = []
+            SS.post_action_state = {}
+            SS.applied_enrichments = set()
+            SS.initial_recs_loaded = False
+            SS.studio_signals = None
+            sess.reset()
+
+            # 2) GCP-side wipe
+            from google.cloud import bigquery
+            bq = bigquery.Client(project=cfg.PROJECT_ID, location=cfg.BQ_LOCATION)
+            wiped = []
+
+            # Drop embeddings table + model
+            for stmt, label in [
+                (f"DROP TABLE IF EXISTS {cfg.t('review_embeddings').strip('`')}", "review_embeddings table"),
+                (f"DROP MODEL IF EXISTS {cfg.t('gemini_text_embed').strip('`')}", "embeddings model"),
+            ]:
+                try:
+                    bq.query(stmt).result()
+                    wiped.append(label)
+                except Exception:
+                    pass
+
+            # Reset graph
+            try:
+                graph_ops.reset_to_baseline()
+                wiped.append("graph → baseline (Customer→Product)")
+            except Exception as e:
+                print(f"[reset] graph: {e}")
+
+            # Delete Dataplex terms added during demo
+            try:
+                from core import dataplex_ops
+                for term in ("churn", "stockout", "csat", "days-of-supply"):
+                    if dataplex_ops.delete_glossary_term(term):
+                        wiped.append(f"Dataplex term: {term}")
+            except Exception as e:
+                print(f"[reset] dataplex: {e}")
+
+            # Clear CX agent example_queries
+            try:
+                from core.ca_api_client import HAS_CA_SDK
+                if HAS_CA_SDK:
+                    import google.cloud.geminidataanalytics as gda
+                    from google.protobuf import field_mask_pb2
+                    ca = flywheel.get().ca
+                    name = f"projects/{cfg.PROJECT_ID}/locations/{cfg.CA_LOCATION}/dataAgents/cymbal_customer_experience_agent_12ba"
+                    a = ca.agent_svc.get_data_agent(name=name)
+                    if a.data_analytics_agent.published_context.example_queries:
+                        a.data_analytics_agent._pb.ClearField('last_published_context')
+                        del a.data_analytics_agent.published_context.example_queries[:]
+                        del a.data_analytics_agent.staging_context.example_queries[:]
+                        mask = field_mask_pb2.FieldMask(paths=[
+                            'data_analytics_agent.published_context.example_queries',
+                            'data_analytics_agent.staging_context.example_queries'])
+                        ca.agent_svc.update_data_agent(request=gda.UpdateDataAgentRequest(data_agent=a, update_mask=mask))
+                        wiped.append("CX agent verified queries")
+            except Exception as e:
+                print(f"[reset] ca agent: {e}")
+
+            # Clear flywheel glossary mutations
+            try:
+                bq.query(
+                    "DELETE FROM `new-project-495419.cymbal_retail._flywheel_glossary` "
+                    "WHERE source IN ('manual','promoted_from_memory','defined_in_demo')"
+                ).result()
+                wiped.append("flywheel glossary additions")
+            except Exception as e:
+                print(f"[reset] flywheel glossary: {e}")
+
+        st.toast(f"✅ Reset complete — wiped {len(wiped)} artifact(s)")
         st.rerun()
 
 # Chat input pinned at bottom
