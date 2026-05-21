@@ -165,7 +165,35 @@ def _path_chip(path):
     return _badge(path)
 
 # --- core flow -------------------------------------------------------------
+def _last_assistant_needed_definition():
+    """If the most recent assistant message was a needs_definition prompt,
+    return (term, source_question). Else (None, None)."""
+    for msg in reversed(SS.history):
+        if msg["role"] == "assistant":
+            ans = msg.get("answer")
+            if ans and ans.path_taken == "needs_definition":
+                return ans.needs_definition, msg.get("source_question") or ans.question
+            return None, None
+    return None, None
+
+
 def _ask(question: str, explicit_suffix: str = ""):
+    # If the prior assistant turn was asking for a definition, treat this
+    # chat input AS the definition rather than a new question.
+    pending_term, source_q = _last_assistant_needed_definition()
+    if pending_term and not explicit_suffix:
+        # Save the user's text as a personal memory for that term
+        try:
+            flywheel.get().save_user_definition(pending_term, question.strip(), SS.user_id, source_q or "")
+        except Exception:
+            pass
+        # Treat this turn as a saved definition message, then re-ask original
+        SS.history.append({"role": "user", "content": question, "user_id": SS.user_id,
+                           "is_definition_for": pending_term})
+        # Re-run the original question now that the definition exists
+        SS["pending_q"] = source_q
+        return
+
     SS.history.append({"role": "user", "content": question, "user_id": SS.user_id})
 
     # 1) Check for inheritance — non-original user + matching applied enrichment
@@ -390,7 +418,16 @@ with left:
 
     for i, msg in enumerate(SS.history):
         if msg["role"] == "user":
+            # Light visual flag if this user message is a definition the user
+            # provided in response to a needs_definition prompt.
+            extra_label = ""
+            if msg.get("is_definition_for"):
+                extra_label = (f'<div style="font-size:10px;color:#1d4ed8;'
+                               f'text-transform:uppercase;letter-spacing:.05em;'
+                               f'margin:0 4px 4px auto;width:fit-content;">'
+                               f'Definition of {msg["is_definition_for"]}</div>')
             st.markdown(
+                f'{extra_label}'
                 f'<div style="background:#eef4ff;color:#111827;padding:10px 16px;'
                 f'border-radius:16px 16px 4px 16px;margin:14px 0 6px auto;max-width:80%;'
                 f'width:fit-content;font-size:14px;line-height:1.5;">{msg["content"]}</div>',
@@ -398,6 +435,19 @@ with left:
         else:
             ans: Answer = msg["answer"]
             cached_for_path = msg.get("raw_cached")
+
+            # ---- needs_definition: just narrate, expect the next chat msg ----
+            if ans.path_taken == "needs_definition":
+                st.markdown(
+                    f'<div style="margin:8px 0 4px;">{_path_chip("needs_definition")}'
+                    f'{_badge((ans.needs_definition or "this term") + " is undefined", "asking")}'
+                    f'</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div style="font-size:14px;line-height:1.6;color:#111827;margin:4px 0 8px;">{ans.narrative}</div>'
+                    f'<div style="font-size:12px;color:#6b7280;font-style:italic;margin:4px 0 12px;">'
+                    f'↳ Type the definition into the chat below — I\'ll save it and re-answer the question.'
+                    f'</div>', unsafe_allow_html=True)
+                continue
 
             # ---- needs_disambiguation: business user picks an option ----
             if ans.path_taken == "needs_disambiguation" and cached_for_path and cached_for_path.get("options"):
