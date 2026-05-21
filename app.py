@@ -140,12 +140,34 @@ def _apply_recommendation(rec):
     kind = rec["kind"]
     if kind == "define_glossary_term":
         defn = rec.get("draft_definition", "")
-        try:
-            flywheel.get().add_glossary_term(rec["term"], defn, source="defined_in_demo")
-        except Exception as e:
-            st.warning(f"Glossary write failed: {e}")
-        SS.built_today.append(f'📖  Glossary term **{rec["term"]}** defined (Dataplex + BQ)')
-        SS.post_action_state["what's our customer churn rate"] = "[post-define]"
+        ok_bq, ok_dp = False, False
+        with st.spinner(f"Writing '{rec['term']}' to BigQuery + Dataplex…"):
+            try:
+                flywheel.get().add_glossary_term(rec["term"], defn, source="defined_in_demo")
+                ok_bq = True
+            except Exception as e:
+                st.error(f"BigQuery glossary write failed: {e}")
+            # Also explicitly mirror to Dataplex via REST (independent of the BQ write)
+            try:
+                from core import dataplex_ops
+                name = dataplex_ops.write_glossary_term(rec["term"], defn)
+                if name:
+                    ok_dp = True
+                    try:
+                        flywheel.get()._record_provenance("dataplex_glossary_term", name)
+                    except Exception:
+                        pass
+            except Exception as e:
+                st.warning(f"Dataplex glossary write best-effort failed: {str(e)[:120]}")
+        if ok_bq and ok_dp:
+            st.toast(f"✅ '{rec['term']}' saved to BigQuery + Dataplex glossary")
+            SS.built_today.append(f"📖  **{rec['term']}** → BigQuery + Dataplex glossary")
+        elif ok_bq:
+            st.toast(f"✅ '{rec['term']}' saved to BigQuery (Dataplex write skipped)")
+            SS.built_today.append(f"📖  **{rec['term']}** → BigQuery only")
+        else:
+            st.toast(f"⚠ '{rec['term']}' write failed — see error above")
+            SS.built_today.append(f"📖  **{rec['term']}** — write failed")
 
     elif kind == "promote_verified_queries":
         # Update CX agent example_queries via CA API (best-effort)
