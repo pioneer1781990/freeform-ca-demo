@@ -5,9 +5,22 @@ BASE_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-html, body, [class*="css"], div, p, span, button, input, textarea {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+/* Apply Inter only to text content — do NOT override icon fonts */
+.stApp, .stApp p, .stApp span:not([class*="material"]):not([class*="Icon"]):not([class*="icon"]),
+.stApp button:not([class*="material"]):not([class*="Icon"]),
+.stApp input, .stApp textarea, .stApp label, .stApp h1, .stApp h2, .stApp h3,
+.stApp h4, .stApp h5, .stApp h6 {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
+
+/* Preserve Material icon fonts wherever Streamlit uses them */
+[class*="material-icons"], [class*="material-symbols"],
+[class*="icon"]:not(.stApp), [data-baseweb] [class*="icon"],
+[data-testid="stExpander"] svg, [data-testid="stExpander"] i {
+  font-family: revert !important;
+}
+/* Code stays mono */
+code, pre, .stCode { font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace !important; }
 
 :root { color-scheme: light !important; }
 
