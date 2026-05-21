@@ -91,6 +91,17 @@ class CAClient:
         except Exception:
             return []
 
+    def delete_agent(self, agent_id: str) -> bool:
+        if not HAS_CA_SDK:
+            return False
+        try:
+            name = f"projects/{cfg.PROJECT_ID}/locations/{cfg.CA_LOCATION}/dataAgents/{agent_id}"
+            self.agent_svc.delete_data_agent(name=name)
+            return True
+        except Exception as e:
+            print(f"[ca_api] delete_agent({agent_id}) failed: {e}")
+            return False
+
     # --- chat ---------------------------------------------------------------
     def chat_with_agent(self, agent_id: str, question: str) -> Dict[str, Any]:
         """Send a question to a published agent. Returns dict with sql, narrative, rows."""

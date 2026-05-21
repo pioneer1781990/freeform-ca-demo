@@ -178,8 +178,16 @@ class Flywheel:
     def publish_agent(self, agent_id: str, name: str, description: str,
                       tables_in_scope: List[str], glossary_terms: List[str],
                       system_instruction: str) -> bool:
-        """Create the agent in CA API + register locally."""
+        """Create the agent in CA API + register locally. If the agent already
+        exists in CA API with a stale scope, recreate it with the new scope."""
         ok = self.ca.ensure_agent(agent_id, tables_in_scope, system_instruction)
+        if not ok:
+            # Try delete + recreate to refresh scope
+            try:
+                self.ca.delete_agent(agent_id)
+            except Exception:
+                pass
+            ok = self.ca.ensure_agent(agent_id, tables_in_scope, system_instruction)
         self.register_agent_locally(agent_id, name, description, tables_in_scope,
                                     glossary_terms, system_instruction,
                                     status="published" if ok else "draft")
@@ -231,7 +239,10 @@ class Flywheel:
             # Count distinct questions that touched any table in this domain
             n_q = sum(tbl_count.get(t, 0) for t in dom_tables)
             if n_q < min_questions: continue
-            tables = sorted(dom_tables & set(tbl_count.keys()))
+            # Agent scope = ENTIRE domain bundle, not just observed subset, so
+            # follow-up questions on adjacent tables (e.g. customer_payments
+            # for a CX agent) are also answerable.
+            tables = sorted(dom_tables)
             name, desc, sys_inst, gloss = self._draft_agent(tables)
             proposals.append({
                 "suggested_id": self._slugify(name),
@@ -387,8 +398,13 @@ class Flywheel:
         return "general_correction"
 
     def _slugify(self, s: str) -> str:
-        import re
-        return "cymbal_" + re.sub(r'[^a-z0-9]+','_', s.lower()).strip('_') + "_agent"
+        """Slug + 4-char version suffix so re-publishing after a delete doesn't
+        collide with the tombstoned ID in CA API (which is held for ~30 days)."""
+        import re, time
+        base = "cymbal_" + re.sub(r'[^a-z0-9]+','_', s.lower()).strip('_') + "_agent"
+        # 4-char base36 from current time → changes per minute
+        suffix = format(int(time.time()) % 1296000, 'x')[:4]
+        return f"{base}_{suffix}"
 
     def _draft_agent(self, tables: List[str]) -> tuple:
         """Generate a name, description, system instruction, glossary list from
