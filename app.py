@@ -170,45 +170,64 @@ def _apply_recommendation(rec):
             SS.built_today.append(f"📖  **{rec['term']}** — write failed")
 
     elif kind == "promote_verified_queries":
-        # Update CX agent example_queries via CA API (best-effort)
+        # Update CX agent example_queries via CA API (REQUIRES update_mask)
         ok = False
-        try:
-            from core.ca_api_client import HAS_CA_SDK
-            if HAS_CA_SDK:
-                import google.cloud.geminidataanalytics as gda
-                ca = flywheel.get().ca
-                if ca.agent_svc:
-                    name = f"projects/{cfg.PROJECT_ID}/locations/{cfg.CA_LOCATION}/dataAgents/{rec['agent_id']}"
-                    try:
+        err = None
+        with st.spinner("Promoting 3 verified queries to the CX agent…"):
+            try:
+                from core.ca_api_client import HAS_CA_SDK
+                if HAS_CA_SDK:
+                    import google.cloud.geminidataanalytics as gda
+                    from google.protobuf import field_mask_pb2
+                    ca = flywheel.get().ca
+                    if ca.agent_svc:
+                        name = f"projects/{cfg.PROJECT_ID}/locations/{cfg.CA_LOCATION}/dataAgents/{rec['agent_id']}"
                         existing = ca.agent_svc.get_data_agent(name=name)
                         # Build 3 example queries from the promotion patterns
+                        ds = cfg.PROJECT_ID + "." + cfg.DATASET
+                        sqls = [
+                          (f"SELECT mc.customer_state, ROUND(AVG(CAST(cr.review_score AS INT64)),2) AS avg_review, COUNT(*) AS n "
+                           f"FROM `{ds}.customer_reviews` cr "
+                           f"JOIN `{ds}.marketplace_orders` mo ON cr.order_id=mo.order_id "
+                           f"JOIN `{ds}.marketplace_customers` mc ON mo.customer_id=mc.customer_id "
+                           f"GROUP BY 1 HAVING n>100 ORDER BY 2 DESC"),
+                          (f"SELECT mc.customer_city, COUNT(*) AS reviews "
+                           f"FROM `{ds}.customer_reviews` cr "
+                           f"JOIN `{ds}.marketplace_orders` mo ON cr.order_id=mo.order_id "
+                           f"JOIN `{ds}.marketplace_customers` mc ON mo.customer_id=mc.customer_id "
+                           f"GROUP BY 1 ORDER BY 2 DESC"),
+                          (f"SELECT mc.customer_state, ROUND(COUNTIF(CAST(cr.review_score AS INT64)>=4)/COUNT(*)*100,1) AS csat_pct "
+                           f"FROM `{ds}.customer_reviews` cr "
+                           f"JOIN `{ds}.marketplace_orders` mo ON cr.order_id=mo.order_id "
+                           f"JOIN `{ds}.marketplace_customers` mc ON mo.customer_id=mc.customer_id "
+                           f"GROUP BY 1 ORDER BY 2 DESC"),
+                        ]
                         examples = []
-                        for patt in rec.get("patterns", [])[:3]:
+                        for patt, sql in zip(rec.get("patterns", [])[:3], sqls):
                             ex = gda.ExampleQuery()
                             ex.natural_language_question = patt
-                            ex.sql_query = ("SELECT mc.customer_state, "
-                                            "ROUND(AVG(CAST(cr.review_score AS INT64)),2) AS avg "
-                                            "FROM `" + cfg.PROJECT_ID + "." + cfg.DATASET + ".customer_reviews` cr "
-                                            "JOIN `" + cfg.PROJECT_ID + "." + cfg.DATASET + ".marketplace_orders` mo ON cr.order_id=mo.order_id "
-                                            "JOIN `" + cfg.PROJECT_ID + "." + cfg.DATASET + ".marketplace_customers` mc ON mo.customer_id=mc.customer_id "
-                                            "GROUP BY 1 ORDER BY 2 DESC")
+                            ex.sql_query = sql
                             examples.append(ex)
-                        # Add examples to published_context
                         del existing.data_analytics_agent.published_context.example_queries[:]
                         existing.data_analytics_agent.published_context.example_queries.extend(examples)
                         del existing.data_analytics_agent.staging_context.example_queries[:]
                         existing.data_analytics_agent.staging_context.example_queries.extend(examples)
+                        mask = field_mask_pb2.FieldMask(paths=[
+                            'data_analytics_agent.published_context',
+                            'data_analytics_agent.staging_context'])
                         ca.agent_svc.update_data_agent(
-                            request=gda.UpdateDataAgentRequest(data_agent=existing))
+                            request=gda.UpdateDataAgentRequest(data_agent=existing, update_mask=mask))
                         flywheel.get()._record_provenance(
                             "ca_agent_example_queries", rec['agent_id'])
                         ok = True
-                    except Exception as e:
-                        st.caption(f"(CA agent update best-effort: {str(e)[:80]})")
-        except Exception:
-            pass
-        SS.built_today.append("✅  CX agent enhanced with 3 verified queries"
-                              + ("" if ok else " (logged locally)"))
+            except Exception as e:
+                err = str(e)[:200]
+        if ok:
+            st.toast("✅ CX agent now has 3 verified queries")
+            SS.built_today.append("✅  CX agent → 3 verified queries (visible in BQ Studio)")
+        else:
+            st.error(f"Agent update failed: {err}" if err else "Agent update failed")
+            SS.built_today.append("✅  3 verified queries logged locally (CA update failed)")
         SS.post_action_state["average review score by brazilian state"] = "[post-promote]"
 
     elif kind == "add_graph_edge":
