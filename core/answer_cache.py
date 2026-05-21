@@ -805,6 +805,9 @@ _ALIASES: Dict[str, str] = {
 }
 
 
+_ANSWERS_NORM: Dict[str, Dict[str, Any]] = {_normalize(k): v for k, v in ANSWERS.items()}
+
+
 def lookup(question: str, suffix: str = "") -> Optional[Dict[str, Any]]:
     """Return cached answer if available; None otherwise.
 
@@ -814,13 +817,12 @@ def lookup(question: str, suffix: str = "") -> Optional[Dict[str, Any]]:
     `suffix` lets us key into post-action variants (e.g. "[post-choose-90d]")."""
     norm = _normalize(question)
     canon = _ALIASES.get(norm, norm)
-    key = canon + (f" {suffix}" if suffix else "")
-    hit = ANSWERS.get(key)
+    suffix_norm = _normalize(suffix) if suffix else ""
+    key = canon + (f" {suffix_norm}" if suffix_norm else "")
+    hit = _ANSWERS_NORM.get(key)
     if hit: return hit
-    # Last-ditch: try normalized question itself (no alias) with suffix
-    if canon != norm:
-        return ANSWERS.get(norm + (f" {suffix}" if suffix else ""))
-    return None
+    # Fallback to literal lookup (preserves backward compat)
+    return ANSWERS.get(question.lower().strip() + (f" {suffix}" if suffix else ""))
 
 
 def to_answer(question: str, cached: Dict[str, Any]) -> Answer:
