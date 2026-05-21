@@ -196,16 +196,10 @@ def _ask(question: str, explicit_suffix: str = ""):
 
 
 def _load_initial_recs():
-    """One-shot load of live-signal-derived recommendations into Studio."""
-    if SS.initial_recs_loaded: return
+    """No-op by design — demo starts with an empty Studio recommendation
+    list so the audience sees them appear AS the business user asks
+    questions. The 'Live signals' panel above still pulls from history."""
     SS.initial_recs_loaded = True
-    if not HAS_LIVE_SIGNALS: return
-    try:
-        for r in _live_signals.initial_recommendations():
-            rec_id = f"rec_initial_{len(SS.studio_recs)}_{r['kind']}"
-            SS.studio_recs.append({**r, "id": rec_id, "source": "live_signal"})
-    except Exception as e:
-        print(f"[init recs] {e}")
 
 
 def _refresh_signals(force: bool = False):
@@ -266,6 +260,8 @@ def _apply_recommendation(rec):
                     if ca.agent_svc:
                         name = f"projects/{cfg.PROJECT_ID}/locations/{cfg.CA_LOCATION}/dataAgents/{rec['agent_id']}"
                         existing = ca.agent_svc.get_data_agent(name=name)
+                        # Clear read-only field that breaks UpdateDataAgent
+                        existing.data_analytics_agent._pb.ClearField('last_published_context')
                         ds = cfg.PROJECT_ID + "." + cfg.DATASET
                         sqls = [
                           (f"SELECT mc.customer_state, ROUND(AVG(CAST(cr.review_score AS INT64)),2) AS avg_review, COUNT(*) AS n "
@@ -286,7 +282,9 @@ def _apply_recommendation(rec):
                         existing.data_analytics_agent.published_context.example_queries.extend(examples)
                         del existing.data_analytics_agent.staging_context.example_queries[:]
                         existing.data_analytics_agent.staging_context.example_queries.extend(examples)
-                        mask = field_mask_pb2.FieldMask(paths=['data_analytics_agent.published_context','data_analytics_agent.staging_context'])
+                        mask = field_mask_pb2.FieldMask(paths=[
+                            'data_analytics_agent.published_context.example_queries',
+                            'data_analytics_agent.staging_context.example_queries'])
                         ca.agent_svc.update_data_agent(request=gda.UpdateDataAgentRequest(data_agent=existing, update_mask=mask))
                         flywheel.get()._record_provenance("ca_agent_example_queries", rec['agent_id'])
                         ok = True
