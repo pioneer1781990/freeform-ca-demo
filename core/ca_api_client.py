@@ -121,19 +121,33 @@ class CAClient:
                 data_agent_context=agent_ctx,
                 thinking_mode=gda.ChatRequest.ThinkingMode.FAST if hasattr(gda.ChatRequest,'ThinkingMode') else 1,
             )
-            sql_text, all_text_events = None, []
+            sql_text = None
+            narrative_parts, thinking_parts = [], []
+            had_error = None
             for resp in self.chat_svc.chat(request=req):
-                sys_msg = resp.system_message
-                if sys_msg.text and sys_msg.text.parts:
-                    all_text_events.append("\n".join(sys_msg.text.parts).strip())
-                if sys_msg.data and sys_msg.data.generated_sql:
-                    sql_text = sys_msg.data.generated_sql
-            # Heuristic: the LAST text event (after data has been produced) is the
-            # final narrative. Earlier ones are progress / thinking.
-            narrative = all_text_events[-1] if all_text_events else ""
-            thinking  = "\n\n".join(all_text_events[:-1]) if len(all_text_events) > 1 else None
+                sm = resp.system_message
+                if sm.text and sm.text.parts:
+                    text = "\n".join(sm.text.parts).strip()
+                    # text_type is an enum: FINAL_RESPONSE=1, THOUGHT=2, PROGRESS=3
+                    tt = int(sm.text.text_type) if hasattr(sm.text,'text_type') else 0
+                    if tt == 1:  # FINAL_RESPONSE
+                        narrative_parts.append(text)
+                    else:  # THOUGHT / PROGRESS / UNSPECIFIED
+                        thinking_parts.append(text)
+                if sm.data and sm.data.generated_sql:
+                    sql_text = sm.data.generated_sql
+                if sm.error and sm.error.text:
+                    had_error = sm.error.text
+            # If no FINAL_RESPONSE text streamed (older builds), fall back to last text
+            narrative = "\n\n".join(narrative_parts).strip()
+            if not narrative and thinking_parts:
+                narrative = thinking_parts[-1]
+                thinking_parts = thinking_parts[:-1]
+            thinking = "\n\n".join(thinking_parts) if thinking_parts else None
             rows = self._execute_if_sql(sql_text) if sql_text else None
-            return {"narrative": narrative, "sql": sql_text, "rows": rows, "thinking": thinking}
+            out = {"narrative": narrative, "sql": sql_text, "rows": rows, "thinking": thinking}
+            if had_error: out["agent_error"] = had_error
+            return out
         except Exception as e:
             return {"error": str(e), "narrative": "", "sql": None, "rows": None}
 
