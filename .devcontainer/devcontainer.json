@@ -1,17 +1,12 @@
 {
   "name": "Freeform CA Demo",
-  "image": "mcr.microsoft.com/devcontainers/python:3.11",
-  "features": {
-    "ghcr.io/devcontainers/features/google-cloud-cli:1": {
-      "installGkeGcloudAuthPlugin": false
-    },
-    "ghcr.io/devcontainers/features/github-cli:1": {}
-  },
-  "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt && chmod +x setup_gcp.sh load_data.sh run_demo.sh",
+  "image": "mcr.microsoft.com/devcontainers/universal:2-linux",
+  "postCreateCommand": "pip install --user -r requirements.txt && chmod +x setup_gcp.sh load_data.sh run_demo.sh scripts/reset_demo.sh",
+  "waitFor": "postCreateCommand",
   "forwardPorts": [8501],
   "portsAttributes": {
     "8501": {
-      "label": "Streamlit (Ask + Studio)",
+      "label": "Streamlit (Freeform CA Demo)",
       "onAutoForward": "openPreview",
       "visibility": "public"
     }
