@@ -112,12 +112,12 @@ def _chip(label, kind=""):
             f'{label}</span>')
 
 # --- ANSWER FLOW -----------------------------------------------------------
-def _ask(question: str):
+def _ask(question: str, explicit_suffix: str = ""):
     """Process an ask. Checks cache → uses orchestrator if miss."""
     SS.history.append({"role": "user", "content": question})
 
-    # Determine post-action suffix for this question
-    suffix = SS.post_action_state.get(question.lower().strip().rstrip("?"), "")
+    # Determine suffix — explicit (from disambig pick) overrides stored
+    suffix = explicit_suffix or SS.post_action_state.get(question.lower().strip().rstrip("?"), "")
     cached = answer_cache.lookup(question, suffix)
 
     if cached:
@@ -127,10 +127,13 @@ def _ask(question: str):
         for r in cached.get("studio_recommendations", []):
             rec_id = f"rec_{len(SS.studio_recs)}_{r['kind']}"
             SS.studio_recs.append({**r, "id": rec_id})
-    else:
-        # Fall back to real orchestrator
-        ans = orchestrator.get().answer(question, user_id=SS.user_id)
-
+        # Track raw cached dict on the assistant msg (for disambiguation render)
+        SS.history.append({"role": "assistant", "answer": ans,
+                           "raw_cached": cached,
+                           "source_question": question})
+        return
+    # Real orchestrator
+    ans = orchestrator.get().answer(question, user_id=SS.user_id)
     SS.history.append({"role": "assistant", "answer": ans})
 
 def _apply_recommendation(rec):
@@ -266,6 +269,36 @@ with left:
                 unsafe_allow_html=True)
         else:
             ans: Answer = msg["answer"]
+            # ----- needs_disambiguation: option picker -----
+            cached_for_path = msg.get("raw_cached")  # may contain options
+            if ans.path_taken == "needs_disambiguation" and cached_for_path and cached_for_path.get("options"):
+                ambig_term = cached_for_path.get("disambiguation_term", "term")
+                st.markdown(
+                    f'<div style="margin:8px 0 4px;">{_path_chip("needs_disambiguation")}'
+                    f'{_badge(ambig_term + " is ambiguous")}'
+                    f'</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div style="font-size:14px;line-height:1.6;color:#111827;margin:4px 0 12px;">{ans.narrative}</div>',
+                    unsafe_allow_html=True)
+                # Render one button per option
+                already_picked = SS.get(f"disambig_picked_{i}")
+                for opt in cached_for_path["options"]:
+                    key = f"opt_{i}_{opt['key']}"
+                    disabled = bool(already_picked)
+                    if st.button(opt["label"], key=key, use_container_width=True,
+                                 disabled=disabled,
+                                 type=("primary" if already_picked == opt['key'] else "secondary")):
+                        SS[f"disambig_picked_{i}"] = opt['key']
+                        SS["post_action_state"][cached_for_path.get("disambiguation_term","churn") + "_choice"] = opt["key"]
+                        # Re-ask with post-choose-{key} suffix
+                        SS["pending_q"] = msg.get("source_question", "What's our customer churn rate?")
+                        SS["pending_q_suffix"] = "[post-choose-" + opt["key"] + "]"
+                        st.rerun()
+                    if not already_picked:
+                        st.markdown(f'<div style="font-size:11px;color:#6b7280;margin:-4px 0 8px 4px;">{opt.get("subtitle","")}</div>',
+                                    unsafe_allow_html=True)
+                continue
+            # ----- standard answer rendering -----
             st.markdown(
                 f'<div style="margin:8px 0 4px;">{_path_chip(ans.path_taken)}'
                 f'{_badge(_agent_label(ans.agent_used))}'
@@ -388,6 +421,12 @@ with right:
 
 # Chat input pinned at bottom (Streamlit shows it across full width)
 prompt = st.chat_input("Ask anything about your data…")
+# Handle pending question from disambig pick or post-action retry
+if "pending_q" in SS:
+    pq = SS.pop("pending_q")
+    suffix = SS.pop("pending_q_suffix", "")
+    _ask(pq, explicit_suffix=suffix)
+    st.rerun()
 if prompt:
     _ask(prompt)
     st.rerun()
