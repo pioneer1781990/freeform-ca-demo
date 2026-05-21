@@ -768,15 +768,59 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
 
 
 def _normalize(q: str) -> str:
-    return " ".join(q.lower().strip().split())
+    return " ".join(q.lower().strip().rstrip("?.!").split())
+
+
+# Loose-match aliases — common phrasings the demo audience might type that
+# should still hit the cached demo answers. Keys are normalized aliases,
+# values are the canonical cache key.
+_ALIASES: Dict[str, str] = {
+    # Beat 1 — revenue
+    "revenue last month":                       "what was our revenue last month",
+    "what was the revenue last month":          "what was our revenue last month",
+    "monthly revenue":                          "what was our revenue last month",
+    # Beat 2 — late delivery
+    "what is our late delivery rate":           "what's our late delivery rate by month",
+    "what's our late delivery rate":            "what's our late delivery rate by month",
+    "what's our late delivery rate this month": "what's our late delivery rate by month",
+    "late delivery rate":                       "what's our late delivery rate by month",
+    "late deliveries":                          "what's our late delivery rate by month",
+    # Beat 3 — churn
+    "what is our customer churn rate":          "what's our customer churn rate",
+    "churn rate":                               "what's our customer churn rate",
+    "customer churn":                           "what's our customer churn rate",
+    # Beat 4 — review by state
+    "review score by state":                    "average review score by brazilian state",
+    "review by state":                          "average review score by brazilian state",
+    "average review score by state":            "average review score by brazilian state",
+    # Beat 5 — graph multi-hop
+    "top customers and distribution centers":   "for our top 10 customers, which distribution centers stock the products they buy",
+    "which dcs ship to our top customers":      "for our top 10 customers, which distribution centers stock the products they buy",
+    "top customers dcs":                        "for our top 10 customers, which distribution centers stock the products they buy",
+    # Beat 6 — semantic complaints
+    "what are customers upset about":           "what are customers most upset about in their reviews",
+    "customer complaints":                      "what are customers most upset about in their reviews",
+    "what do customers complain about":         "what are customers most upset about in their reviews",
+    "common complaints":                        "what are customers most upset about in their reviews",
+}
 
 
 def lookup(question: str, suffix: str = "") -> Optional[Dict[str, Any]]:
     """Return cached answer if available; None otherwise.
 
-    `suffix` lets us key into post-action variants (e.g. "[post-define]")."""
-    key = _normalize(question) + (f" {suffix}" if suffix else "")
-    return ANSWERS.get(key)
+    Tries exact normalized match first, then a small alias map so common
+    phrasing variants still hit the demo cache.
+
+    `suffix` lets us key into post-action variants (e.g. "[post-choose-90d]")."""
+    norm = _normalize(question)
+    canon = _ALIASES.get(norm, norm)
+    key = canon + (f" {suffix}" if suffix else "")
+    hit = ANSWERS.get(key)
+    if hit: return hit
+    # Last-ditch: try normalized question itself (no alias) with suffix
+    if canon != norm:
+        return ANSWERS.get(norm + (f" {suffix}" if suffix else ""))
+    return None
 
 
 def to_answer(question: str, cached: Dict[str, Any]) -> Answer:
