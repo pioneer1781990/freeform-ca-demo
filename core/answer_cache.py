@@ -596,6 +596,174 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
             "- Themes are derived from semantic similarity — language-agnostic."
         ),
     },
+
+    # ------------------------------------------------------------
+    # Inheritance variants — non-Siya users ask the same question
+    # Siya already enriched. The system inherits the rule; the user
+    # didn't have to define anything.
+    # ------------------------------------------------------------
+    "what's our customer churn rate? [inherited-by-alex-from-churn-defined]": {
+        "narrative": (
+            "Using the 'churn' definition added by Siya last session — customer with no order in 90 days — "
+            "our customer churn rate is **38.4%**. "
+            "You didn't have to define anything; the Sales agent inherited the glossary term automatically. "
+            "Next quarter, anyone on the team asking this gets the same number, instantly."
+        ),
+        "sql": (
+            "WITH last_order AS (\n"
+            "  SELECT user_id, MAX(created_at) AS last_at\n"
+            "  FROM `new-project-495419.cymbal_retail.order_items`\n"
+            "  WHERE status NOT IN ('Cancelled','Returned')\n"
+            "  GROUP BY 1\n"
+            ")\n"
+            "SELECT ROUND(COUNTIF(last_at < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 90 DAY)) / COUNT(*) * 100, 1) AS churn_pct\n"
+            "FROM last_order"
+        ),
+        "rows": [{"churn_pct": 38.4}],
+        "agent_used": "cymbal_sales_agent",
+        "path_taken": "agent_route",
+        "confidence": 0.95,
+        "latency_ms": 1500,
+        "tables_used": ["order_items"],
+        "citations": [
+            _cit("agent_rule", "Sales Analytics agent",
+                 "Routed; applied the inherited churn glossary term — no disambiguation needed."),
+            _cit("glossary", "🧠 Inherited: glossary term 'churn' defined by Siya, May 20",
+                 "A customer is churned if they have not placed a non-cancelled, non-returned order in the last 90 days. "
+                 "Promoted to the Dataplex glossary by Siya — Alex inherits it automatically.",
+                 inherited=True),
+            _cit("table", "order_items",
+                 "`new-project-495419.cymbal_retail.order_items`"),
+        ],
+        "thinking": (
+            "**Why this answer is instant for Alex:**\n"
+            "- Siya promoted the 90-day churn definition to the Dataplex glossary in her last session.\n"
+            "- The Sales agent picks up the glossary term automatically — Alex never sees the disambiguation prompt.\n"
+            "- Same calculation, same number, no extra work — inheritance is the point."
+        ),
+    },
+
+    "average review score by brazilian state [inherited-by-alex-from-cx-verified-queries]": {
+        "narrative": (
+            "Top 5 Brazilian states by average review score — answered directly via the CX agent's verified queries "
+            "(promoted by Siya last session). You didn't have to dig through query history; the agent already owns the join "
+            "pattern. **MG** leads at 4.21, followed by RS (4.18) and PR (4.16); SP carries the volume at 41,202 reviews."
+        ),
+        "sql": None,
+        "rows": [
+            {"state": "MG", "avg_review": 4.21, "n": 8431},
+            {"state": "RS", "avg_review": 4.18, "n": 5912},
+            {"state": "PR", "avg_review": 4.16, "n": 4878},
+            {"state": "SP", "avg_review": 4.08, "n": 41202},
+            {"state": "RJ", "avg_review": 3.94, "n": 12567},
+        ],
+        "agent_used": "cymbal_customer_experience_agent",
+        "path_taken": "agent_route",
+        "confidence": 0.95,
+        "latency_ms": 1500,
+        "tables_used": ["customer_reviews", "marketplace_orders", "marketplace_customers"],
+        "citations": [
+            _cit("agent_rule", "Customer Experience agent",
+                 "Routed; the inherited verified template handled the 3-table join directly."),
+            _cit("verified_query", "✅ Inherited: 3 verified queries on CX agent (promoted by Siya, May 20)",
+                 "Review-by-state, review-by-city, and CSAT-by-region patterns were promoted from query history "
+                 "to the CX agent's example_queries by Siya. Alex inherits them automatically.",
+                 inherited=True),
+            _cit("table", "customer_reviews", "`new-project-495419.cymbal_retail.customer_reviews`"),
+        ],
+        "thinking": (
+            "**Why this answer is instant for Alex:**\n"
+            "- Siya promoted three historical patterns to the CX agent's verified queries last session.\n"
+            "- The agent now answers this join with 95% confidence directly — no fallback to query history.\n"
+            "- The system inherited the rule; Alex did zero promotion work."
+        ),
+    },
+
+    "for our top 10 customers, which distribution centers stock the products they buy? [inherited-by-alex-from-graph-extended]": {
+        "narrative": (
+            "Answered via a single graph traversal — `Customer → Purchased → Product → StockedAt → DC` — using the edges "
+            "Siya added to the BQ Property Graph last session. **Memphis TN** stocks products for 9 of the top 10, "
+            "**Chicago IL** for 7, **Los Angeles CA** for 6, and **Mobile AL** for 4. "
+            "You didn't have to define the graph relationships; the system inherited them."
+        ),
+        "sql": (
+            "SELECT d.name AS dc, COUNT(DISTINCT c.id) AS top_customers_served\n"
+            "FROM GRAPH_TABLE(cymbal_retail.cymbal_retail_graph\n"
+            "  MATCH (c:Customer)-[:Purchased]->(p:Product)-[:StockedAt]->(d:DistributionCenter)\n"
+            "  WHERE c.id IN (SELECT user_id FROM top_customers_cte)\n"
+            "  RETURN c.id AS cid, d.name AS name, d.id AS did)\n"
+            "GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+        ),
+        "rows": [
+            {"dc": "Memphis TN",     "top_customers_served": 9},
+            {"dc": "Chicago IL",     "top_customers_served": 7},
+            {"dc": "Los Angeles CA", "top_customers_served": 6},
+            {"dc": "Mobile AL",      "top_customers_served": 4},
+        ],
+        "agent_used": "cymbal_sales_agent",
+        "path_taken": "agent_route",
+        "confidence": 0.95,
+        "latency_ms": 1500,
+        "tables_used": ["cymbal_retail_graph"],
+        "citations": [
+            _cit("agent_rule", "Sales Analytics agent",
+                 "Routed; the inherited graph edges turned a 4-table join into a single traversal."),
+            _cit("table", "📊 Inherited: BQ Property Graph (DC edges added by Siya, May 20)",
+                 "`Customer → Purchased → Product` and `Product → StockedAt → DistributionCenter` "
+                 "edges were added to the property graph by Siya. Alex inherits the structure automatically.",
+                 inherited=True),
+        ],
+        "thinking": (
+            "**Why this answer is instant for Alex:**\n"
+            "- Siya added the `Purchased` and `StockedAt` edges to the BQ Property Graph last session.\n"
+            "- The Sales agent now resolves the question in one traversal — no brittle 4-table join.\n"
+            "- The graph structure was inherited; Alex didn't have to touch the schema."
+        ),
+    },
+
+    "what are customers most upset about in their reviews? [inherited-by-alex-from-embeddings-created]": {
+        "narrative": (
+            "Using vector search over the `review_embeddings` index built by Siya last session, dissatisfaction clusters as: "
+            "**Late delivery** (3,142 reviews — `atraso`, `não chegou`), **Damaged packaging** (1,876 — `quebrado`, `amassado`), "
+            "**Wrong item or color** (942 — `cor errada`), and **Missing items** (408 — `faltando`). "
+            "You didn't have to build the index — the system inherited the semantic layer Siya created."
+        ),
+        "sql": (
+            "WITH q AS (\n"
+            "  SELECT ML.GENERATE_EMBEDDING(MODEL `cymbal_retail.gemini_text_embed`, 'reclamação cliente insatisfeito') AS query_emb\n"
+            ")\n"
+            "SELECT base.review_id, base.review_comment_message,\n"
+            "       VECTOR_SEARCH(distance) AS similarity\n"
+            "FROM VECTOR_SEARCH(\n"
+            "  TABLE `cymbal_retail.review_embeddings`, 'embedding',\n"
+            "  (SELECT query_emb FROM q), top_k => 5000)"
+        ),
+        "rows": [
+            {"theme": "Late delivery (atraso/não chegou)",         "n_reviews": 3142},
+            {"theme": "Damaged packaging (quebrado/amassado)",    "n_reviews": 1876},
+            {"theme": "Wrong item or color (cor errada/diferente)","n_reviews":  942},
+            {"theme": "Missing items (faltando/incompleto)",      "n_reviews":  408},
+        ],
+        "agent_used": "cymbal_customer_experience_agent",
+        "path_taken": "agent_route",
+        "confidence": 0.92,
+        "latency_ms": 1500,
+        "tables_used": ["review_embeddings", "customer_reviews"],
+        "citations": [
+            _cit("agent_rule", "Customer Experience agent",
+                 "Routed; semantic search resolved the question without keyword fallback."),
+            _cit("table", "🧠 Inherited: review_embeddings vector index (built by Siya, May 20)",
+                 "Vector embeddings over `review_comment_message` were built by Siya. "
+                 "Alex inherits the index — `VECTOR_SEARCH` works immediately, no setup required.",
+                 inherited=True),
+        ],
+        "thinking": (
+            "**Why this answer is instant for Alex:**\n"
+            "- Siya created the `review_embeddings` vector index last session.\n"
+            "- The CX agent now calls `VECTOR_SEARCH` directly — Portuguese clusters with English by meaning.\n"
+            "- The embedding pipeline was inherited; Alex didn't have to provision anything."
+        ),
+    },
 }
 
 
