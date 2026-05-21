@@ -103,10 +103,33 @@ For a fresh laptop, see [README.md → Quick start (local install)](README.md#qu
 | 11 | Ask | `Show me return claims with their evidence photos` | ObjectRef row with images |
 | 12 | Studio → Agents (close) | Show 2 published agents. Switch to Ask, expand "View details" on any answer. | The output contract — narrative, SQL, citations, confidence, all portable. |
 
-### Definition to paste in step 3
+### Definitions to paste when the system asks for one
 
+Pick the one matching whatever term the system says it doesn't know:
+
+**Late delivery** (used in step 3):
 ```
 Percentage of marketplace orders where order_delivered_customer_date is later than order_estimated_delivery_date. From the marketplace_orders table.
+```
+
+**CSAT** (if you ask a CSAT question instead):
+```
+Percentage of customer reviews where review_score >= 4. From the customer_reviews table. Higher is better.
+```
+
+**Stockout** (if you ask about stockout risk):
+```
+A product is at stockout risk when current qty_on_hand in inventory_snapshots is less than or equal to its reorder_point.
+```
+
+**Days of supply** (if you ask about DOS):
+```
+Days of supply = qty_on_hand / avg_daily_demand from the last 30 days of inventory_snapshots.
+```
+
+**Active customer** correction (for step 8 thumbs-down):
+```
+We define active as 60 days, not 90.
 ```
 
 ---
