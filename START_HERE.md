@@ -86,51 +86,28 @@ For a fresh laptop, see [README.md → Quick start (local install)](README.md#qu
 
 ## The demo script — questions to ask in order
 
-| # | Where | Type | Expected behavior |
-|---|---|---|---|
-| 1 | Ask | `What was our revenue last month?` | Routes to **Sales Analytics** agent. Returns ~$405k with table + SQL. |
-| 2 | Ask | `How many rows are in orders_staging?` | **Refused** — not labeled `agent_ready`. |
-| 3 | Ask | `What's our late delivery rate this month?` | Asks you to define "late delivery". **Paste** the definition below. Then auto re-asks. Click **Promote to team** on the green banner. |
-| 4a | Ask | `Average review score by product category` | Freelance with hedging |
-| 4b | Ask | `Which sellers have the worst reviews?` | Freelance with hedging |
-| 4c | Ask | `How many late deliveries did we have this quarter?` | Freelance, uses your definition |
-| 5 | Studio → Memory | Click **Approve & promote** on `late_delivery_definition` | Becomes a glossary term |
-| 6 | Studio → Recommendations | Click **🔁 Check for signals** → click **Review & publish** on the CX Agent proposal | CX agent created in CA API |
-| 7 | Ask | `What's our average review score by payment type?` | Routes to the new **CX** agent. 95% confidence. |
-| 8 | Ask | `How many active customers do we have right now?` → **👎** → correction: `We define active as 60 days, not 90.` | Personal memory saved |
-| 9 | Studio → Memory | Click **Approve & promote** on `active_customer_definition` (4-user convergence: Alice, Bob, Carol, you) | Glossary updated |
-| 10 | Ask | `How many active customers do we have right now?` *(re-ask)* | Different number — uses the 60-day rule |
-| 11 | Ask | `Show me return claims with their evidence photos` | ObjectRef row with images |
-| 12 | Studio → Agents (close) | Show 2 published agents. Switch to Ask, expand "View details" on any answer. | The output contract — narrative, SQL, citations, confidence, all portable. |
+| # | Action | Expected behavior |
+|---|---|---|
+| 1 | Click chip: `What was our revenue last month?` | Routes to **Sales Analytics** agent. ~$405k. Citation shows agent rule + Net Revenue glossary. |
+| 2 | Click chip: `What's our late delivery rate by month?` | Routes to **Customer Experience** agent. Answers cleanly because the agent's `system_instruction` encodes the late-delivery rule. Citations show the agent rule + a `INFORMATION_SCHEMA.JOBS` verified query pattern. |
+| 3 | Click chip: `What's our customer churn rate?` | **Disambiguation flow** — system asks you to pick one of 4 churn definitions (90 days / 60 days / 12 months / single-purchase). Click **"No purchase in the last 90 days"**. Answer appears (38.4%) with the citation crediting your choice. In **Studio (right panel)** a new recommendation card appears: *"Promote 'churn' (90-day rule) to Dataplex glossary"*. Click **"Save to Dataplex glossary"** in Studio → green toast → "Built today" gains an entry. |
+| 4 | Click chip: `Average review score by Brazilian state` | CX agent **partial answer** at lower confidence — it didn't have a verified template, so it mined 3 historical query patterns from `JOBS`. Studio gets a new rec: *"Promote 3 query-history patterns to CX agent"*. Click **"Promote to CX agent"** in Studio → real `UpdateDataAgent` call → the patterns become `example_queries` on the CX agent (visible in BQ Studio). |
+| 5 | Type in chat: `For our top 10 customers, which distribution centers stock the products they buy?` | Freelance attempts the 3-table join and hedges. Studio gets: *"Add edges to BQ Property Graph"*. Click **"Add to graph"** in Studio → real `CREATE OR REPLACE PROPERTY GRAPH` runs → the graph extends from 2 nodes/1 edge to 3 nodes/2 edges (visible in BigQuery). Re-ask the same question → clean graph-traversal answer. |
+| 6 | Type in chat: `What are customers most upset about in their reviews?` | Keyword-only shallow answer (misses Portuguese). Studio gets: *"Create vector embeddings on review_comment_message"*. Click **"Create embeddings"** in Studio → ~10s of real `ML.GENERATE_EMBEDDING` over 500 reviews → embeddings table created (visible in BigQuery). Re-ask → semantic theme clusters with Portuguese terms (`atraso`, `quebrado`, `cor errada`). |
+| 7 | **Inheritance moment.** At top of Ask page, switch user dropdown from **Siya** to **Alex**. Then ask `What's our customer churn rate?` again. | Alex never disambiguated, never defined anything — but the answer arrives instantly (~1.5s) with the same 38.4%, and the citation credits *"🧠 Inherited: glossary term 'churn' defined by Siya, May 21"*. Same trick for the other 3 questions (review by state, top customers/DCs, customers most upset) — Alex inherits all of Siya's enrichments. |
+| 8 | Close: scroll **Studio** to see "Built today" — list of every artifact added this session. | Glossary term in Dataplex · CX agent example_queries · Graph extended · Embeddings table. All real, all visible in GCP console tabs. |
 
-### Definitions to paste when the system asks for one
+### Definitions / picks reference
 
-Pick the one matching whatever term the system says it doesn't know:
+**Beat 3 — Churn disambiguation:** Click the **"No purchase in the last 90 days"** option. The other three options also work — each produces a different but equally valid answer (45.7% for 60-day, 22.1% for 12-month, 51.3% for single-purchase). Stick with 90-day for the script.
 
-**Late delivery** (used in step 3):
-```
-Percentage of marketplace orders where order_delivered_customer_date is later than order_estimated_delivery_date. From the marketplace_orders table.
-```
+**If you ad-lib a question and the system asks for an inline definition**, here are pre-written ones:
 
-**CSAT** (if you ask a CSAT question instead):
-```
-Percentage of customer reviews where review_score >= 4. From the customer_reviews table. Higher is better.
-```
-
-**Stockout** (if you ask about stockout risk):
-```
-A product is at stockout risk when current qty_on_hand in inventory_snapshots is less than or equal to its reorder_point.
-```
-
-**Days of supply** (if you ask about DOS):
-```
-Days of supply = qty_on_hand / avg_daily_demand from the last 30 days of inventory_snapshots.
-```
-
-**Active customer** correction (for step 8 thumbs-down):
-```
-We define active as 60 days, not 90.
-```
+| Term | Definition to paste |
+|---|---|
+| CSAT | Percentage of customer reviews where review_score >= 4. From the customer_reviews table. Higher is better. |
+| Stockout | A product is at stockout risk when current qty_on_hand in inventory_snapshots is less than or equal to its reorder_point. |
+| Days of supply | qty_on_hand / avg_daily_demand from the last 30 days of inventory_snapshots. |
 
 ---
 
