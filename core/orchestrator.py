@@ -42,31 +42,43 @@ class Orchestrator:
         return None
 
     # ---------- intent / agent routing ------------------------------------
+    # Words that strongly indicate the CX/marketplace domain (deflect from Sales)
+    CX_DEFLECTOR_WORDS = {'review','reviews','rating','ratings','csat','satisfaction',
+                          'late','delivery','seller','sellers','complaint','marketplace',
+                          'feedback'}
+    SC_DEFLECTOR_WORDS = {'inventory','stockout','reorder','warehouse','dc ','supplier','restock'}
+
     def _route_to_agent(self, question: str) -> Optional[Dict[str, Any]]:
         agents = self.s.agents()
         if agents.empty: return None
         published = agents[agents['status'] == 'published']
         if published.empty: return None
-        # Dedupe by agent_id (keep newest row) — streaming buffer prevents DB-level dedupe
         published = (published.sort_values('created_at', ascending=False)
                               .drop_duplicates(subset='agent_id', keep='first'))
         ql = question.lower()
+        is_cx_question = any(w in ql for w in self.CX_DEFLECTOR_WORDS)
+        is_sc_question = any(w in ql for w in self.SC_DEFLECTOR_WORDS)
         scored = []
         for _, a in published.iterrows():
             score_val = 0
+            aid = a['agent_id']
             tbls = a['tables_in_scope']
             tbls = list(tbls) if tbls is not None else []
             for tbl in tbls:
-                # crude keyword routing: table name appearing in question
                 if tbl.replace('_', ' ') in ql or tbl in ql:
                     score_val += 2
-            # domain keywords
-            if a['agent_id'].startswith('cymbal_sales') and any(w in ql for w in
-                ['revenue','sale','order','customer','product','aov','margin','department']):
-                score_val += 1
-            if a['agent_id'].startswith('cymbal_cx') and any(w in ql for w in
-                ['review','csat','delivery','satisfaction','seller','complaint','rating']):
-                score_val += 1
+            if aid.startswith('cymbal_sales'):
+                if any(w in ql for w in ['revenue','sale','aov','margin','department','order_items','orders']):
+                    score_val += 1
+                # DEFLECT: review/CX words demote Sales heavily
+                if is_cx_question:
+                    score_val -= 3
+                if is_sc_question:
+                    score_val -= 2
+            if aid.startswith('cymbal_cx') or aid.startswith('cymbal_customer_experience'):
+                if is_cx_question: score_val += 3
+            if aid.startswith('cymbal_supply') or aid.startswith('cymbal_supply_chain'):
+                if is_sc_question: score_val += 3
             scored.append((score_val, a))
         scored.sort(key=lambda x: -x[0])
         if scored and scored[0][0] >= 1:

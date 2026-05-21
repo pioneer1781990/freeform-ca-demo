@@ -144,6 +144,10 @@ You MUST:
     SELECT ROUND(COUNTIF(review_score >= 4) / COUNT(*) * 100, 2) AS csat_pct
     FROM `{cfg.PROJECT_ID}.{cfg.DATASET}.customer_reviews`
   — no GROUP BY needed.
+- TIMESTAMP_ADD / TIMESTAMP_SUB only support sub-day intervals (MICROSECOND..DAY). For MONTH/QUARTER/YEAR offsets, use DATE_ADD/DATE_SUB on a DATE expression, or use DATETIME_ADD/DATETIME_SUB on a DATETIME, then CAST back. Simplest pattern for "this month so far":
+    WHERE review_creation_date >= TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), MONTH)
+  No upper bound needed — CURRENT_TIMESTAMP() handles it.
+- If the narrative gives a specific number, that number MUST come from the SQL result. NEVER invent or estimate a number in the narrative — write narrative AFTER seeing what columns the SQL returns, in terms of those columns (e.g. "CSAT for this month is shown in the csat_pct column").
 - Be honest about ambiguity: if a key term ("revenue", "active", "stockout") is not defined in the glossary, hedge in the narrative and lean on table descriptions or your own definition with explicit caveat.
 - If the question cannot be answered without an undefined business term, return SQL=null and explain.
 
@@ -172,8 +176,17 @@ Return JSON with keys: narrative (string), sql (string or null), thinking (1-2 s
             text = resp.content[0].text
             payload = self._extract_json(text)
             sql_text = payload.get("sql")
-            rows = self._execute_if_sql(sql_text) if sql_text else None
-            return {"narrative": payload.get("narrative", ""), "sql": sql_text,
+            rows, final_sql = (None, sql_text)
+            if sql_text:
+                rows, final_sql = self._execute_with_retry(
+                    sql_text, schemas=schemas, glossary=glossary,
+                    verified_queries=verified_queries, memory=memory,
+                    question=question, extra_instruction=extra_instruction)
+            narrative = payload.get("narrative","")
+            if sql_text and rows is None:
+                narrative = ("I tried to compute this but my generated SQL didn't run successfully. "
+                             "An analyst can fix the query in the Studio. The intent was: " + (narrative or ""))
+            return {"narrative": narrative, "sql": final_sql,
                     "rows": rows, "thinking": payload.get("thinking")}
         except Exception as e:
             return {"error": str(e), "narrative": "", "sql": None, "rows": None}
@@ -187,6 +200,58 @@ Return JSON with keys: narrative (string), sql (string or null), thinking (1-2 s
         except Exception as e:
             print(f"[ca_api] sql exec failed: {e}\nSQL was:\n{sql}")
             return None
+
+    def _execute_with_retry(self, sql: Optional[str], *, schemas: str, glossary: str,
+                            verified_queries: str, memory: str, question: str,
+                            extra_instruction: str = "", max_retries: int = 1):
+        """Execute SQL; on failure, ask Claude to fix it once with the error."""
+        if not sql: return None, None
+        try:
+            df = self.bq.query(sql, location=cfg.BQ_LOCATION).to_dataframe()
+            return df.head(200).to_dict(orient="records"), sql
+        except Exception as e:
+            err = str(e).splitlines()[0][:200]
+            print(f"[ca_api] sql failed, retrying once: {err}")
+        if not self.claude or max_retries <= 0:
+            return None, sql
+        # Retry: feed error back to Claude
+        retry_sys = f"""Previous SQL you wrote failed. Fix it.
+
+PREVIOUS SQL:
+{sql}
+
+ERROR:
+{err}
+
+TABLE SCHEMAS:
+{schemas}
+
+GLOSSARY:
+{glossary}
+
+USER MEMORY:
+{memory}
+
+{extra_instruction}
+
+Return JSON with keys: narrative (string describing what you computed), sql (fixed SQL string), thinking (1 sentence)."""
+        try:
+            resp = self.claude.messages.create(
+                model=cfg.CLAUDE_MODEL, max_tokens=1200,
+                system=retry_sys,
+                messages=[{"role":"user","content":question}],
+            )
+            payload = self._extract_json(resp.content[0].text)
+            fixed_sql = payload.get("sql")
+            if fixed_sql:
+                try:
+                    df = self.bq.query(fixed_sql, location=cfg.BQ_LOCATION).to_dataframe()
+                    return df.head(200).to_dict(orient="records"), fixed_sql
+                except Exception as e2:
+                    print(f"[ca_api] retry also failed: {e2}")
+        except Exception as e:
+            print(f"[ca_api] retry call failed: {e}")
+        return None, sql
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
         m = re.search(r"\{[\s\S]*\}", text)

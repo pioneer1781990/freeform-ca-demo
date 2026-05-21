@@ -86,7 +86,7 @@ with tab_recs:
 
         with col1:
             st.markdown('<div class="section-title">Suggested new agents</div>', unsafe_allow_html=True)
-            proposals = fw.agent_proposals(only_session=True, min_count=3)
+            proposals = fw.domain_proposals(only_session=True, min_questions=2)
             if not proposals:
                 st.caption("No agent clusters detected this session.")
             for p in proposals[:3]:

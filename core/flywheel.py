@@ -18,19 +18,37 @@ class Flywheel:
 
     # --- feedback / memory --------------------------------------------------
     def record_feedback(self, query_id: str, thumbs: str, correction: Optional[str], user_id: str):
-        """Update query log + write user memory if correction provided."""
+        """Update query log + write user memory if correction provided.
+        Uses the source question (looked up from query_log) plus the correction
+        text to infer the right memory key."""
+        # Look up the question text for key inference (best-effort)
+        source_question = ""
+        try:
+            row = next(iter(self.s.bq.query(
+                f"SELECT question_text FROM {cfg.t('_flywheel_query_log')} "
+                f"WHERE created_at > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR) "
+                f"AND user_id=@uid ORDER BY created_at DESC LIMIT 1",
+                job_config=bigquery.QueryJobConfig(query_parameters=[
+                    bigquery.ScalarQueryParameter("uid","STRING",user_id)
+                ])).result()))
+            source_question = row.question_text or ""
+        except Exception:
+            pass
         sql = f"""
         UPDATE {cfg.t('_flywheel_query_log')}
         SET thumbs=@thumbs, correction=@corr
         WHERE query_id=@qid
         """
-        self.s.bq.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=[
-            bigquery.ScalarQueryParameter("thumbs","STRING",thumbs),
-            bigquery.ScalarQueryParameter("corr","STRING",correction or ""),
-            bigquery.ScalarQueryParameter("qid","STRING",query_id),
-        ])).result()
+        try:
+            self.s.bq.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("thumbs","STRING",thumbs),
+                bigquery.ScalarQueryParameter("corr","STRING",correction or ""),
+                bigquery.ScalarQueryParameter("qid","STRING",query_id),
+            ])).result()
+        except Exception as e:
+            print(f"[record_feedback] query_log update skipped: {str(e)[:100]}")
         if correction:
-            key = self._guess_memory_key(correction)
+            key = self._guess_memory_key(f"{source_question} {correction}")
             sql_mem = f"""
             INSERT INTO {cfg.t('_flywheel_memory')}
               (id, user_id, memory_type, key, value, source_question,
@@ -166,6 +184,65 @@ class Flywheel:
                                     glossary_terms, system_instruction,
                                     status="published" if ok else "draft")
         return ok
+
+    # --- domain mapping for proposals --------------------------------------
+    DOMAIN_TABLES = {
+        "Customer Experience": {"customer_reviews","customer_payments","marketplace_orders",
+                                "marketplace_customers","marketplace_sellers"},
+        "Supply Chain":        {"inventory_items","inventory_snapshots","distribution_centers",
+                                "supplier_catalog"},
+        "Voice of Customer":   {"support_tickets","support_ticket_docs","return_claims",
+                                "return_evidence_docs"},
+        "Sales Analytics":     {"orders","order_items","products","users"},
+    }
+
+    def domain_proposals(self, only_session: bool = True, min_questions: int = 2) -> List[Dict[str, Any]]:
+        """Detect that N+ questions touched tables from the same domain bundle,
+        where that domain doesn't yet have a published agent."""
+        from core import session
+        if only_session:
+            ts = session.start_timestamp().isoformat()
+            where = "AND created_at > TIMESTAMP(@start)"
+            params = [bigquery.ScalarQueryParameter("start","TIMESTAMP",ts)]
+        else:
+            where, params = "", []
+        sql = f"""
+        SELECT t AS tbl, COUNT(DISTINCT question_text) AS n_q
+        FROM {cfg.t('_flywheel_query_log')}, UNNEST(tables_referenced) t
+        WHERE ARRAY_LENGTH(tables_referenced) >= 1 {where}
+        GROUP BY 1
+        """
+        df = self.s.bq.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).to_dataframe()
+        tbl_count = dict(zip(df['tbl'], df['n_q'])) if not df.empty else {}
+
+        # Which domains already have an agent?
+        agents = self.s.agents()
+        covered_tables = set()
+        if not agents.empty:
+            for scope in agents.loc[agents['status']=='published','tables_in_scope']:
+                if scope is not None:
+                    covered_tables |= set(list(scope))
+
+        proposals = []
+        for domain, dom_tables in self.DOMAIN_TABLES.items():
+            # Skip if any table in the domain is already covered by an existing agent
+            if dom_tables & covered_tables:
+                continue
+            # Count distinct questions that touched any table in this domain
+            n_q = sum(tbl_count.get(t, 0) for t in dom_tables)
+            if n_q < min_questions: continue
+            tables = sorted(dom_tables & set(tbl_count.keys()))
+            name, desc, sys_inst, gloss = self._draft_agent(tables)
+            proposals.append({
+                "suggested_id": self._slugify(name),
+                "name": name, "description": desc,
+                "tables_in_scope": tables, "glossary_terms": gloss,
+                "system_instruction": sys_inst,
+                "evidence": f"{n_q} questions touched {domain} tables this session",
+                "evidence_count": n_q,
+            })
+        proposals.sort(key=lambda p: -p['evidence_count'])
+        return proposals
 
     # --- recommendation engine (read-only views into substrate) --------------
     def session_question_count(self) -> int:
