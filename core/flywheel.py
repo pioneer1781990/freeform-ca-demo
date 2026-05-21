@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import pandas as pd
 from google.cloud import bigquery
 
-from core import substrate, ca_api_client
+from core import substrate, ca_api_client, dataplex_ops
 import config as cfg
 
 
@@ -131,7 +131,13 @@ class Flywheel:
         self.s.bq.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=[
             bigquery.ScalarQueryParameter("k","STRING",memory_key),
         ])).result()
-        # 3. Refresh substrate cache
+        # 3. Mirror to Dataplex Catalog (best-effort; failures must not block).
+        dp_name = dataplex_ops.write_glossary_term(term, definition)
+        # 4. Provenance log so a reset can clean this up.
+        self._record_provenance("glossary_term", term)
+        if dp_name:
+            self._record_provenance("dataplex_term", dp_name)
+        # 5. Refresh substrate cache
         self.s.glossary.cache_clear() if hasattr(self.s.glossary, "cache_clear") else None
 
     # --- glossary CRUD ------------------------------------------------------
@@ -151,6 +157,11 @@ class Flywheel:
             bigquery.ScalarQueryParameter("lc","STRING",linked_column),
             bigquery.ScalarQueryParameter("src","STRING",source),
         ])).result()
+        # Mirror to Dataplex Catalog (best-effort).
+        dp_name = dataplex_ops.write_glossary_term(term, definition)
+        self._record_provenance("glossary_term", term)
+        if dp_name:
+            self._record_provenance("dataplex_term", dp_name)
 
     # --- agent CRUD ---------------------------------------------------------
     def register_agent_locally(self, agent_id: str, name: str, description: str,
@@ -387,6 +398,41 @@ class Flywheel:
         ])).result()
 
     # --- helpers ------------------------------------------------------------
+    _provenance_table_ready = False
+
+    def _ensure_provenance_table(self):
+        """Idempotent CREATE TABLE IF NOT EXISTS for the per-session provenance log."""
+        if Flywheel._provenance_table_ready:
+            return
+        sql = f"""
+        CREATE TABLE IF NOT EXISTS {cfg.t('_demo_provenance')} (
+          kind STRING,
+          identifier STRING,
+          created_at TIMESTAMP
+        )
+        """
+        try:
+            self.s.bq.query(sql).result()
+            Flywheel._provenance_table_ready = True
+        except Exception as e:
+            print(f"[_ensure_provenance_table] create skipped: {str(e)[:120]}")
+
+    def _record_provenance(self, kind: str, identifier: str):
+        """Append a (kind, identifier, now) row via SQL DML INSERT so a reset
+        script can find things this demo session added."""
+        self._ensure_provenance_table()
+        sql = f"""
+        INSERT INTO {cfg.t('_demo_provenance')} (kind, identifier, created_at)
+        VALUES (@k, @id, CURRENT_TIMESTAMP())
+        """
+        try:
+            self.s.bq.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("k", "STRING", kind),
+                bigquery.ScalarQueryParameter("id", "STRING", identifier),
+            ])).result()
+        except Exception as e:
+            print(f"[_record_provenance] insert skipped ({kind}={identifier!r}): {str(e)[:120]}")
+
     def _guess_memory_key(self, text: str) -> str:
         t = text.lower()
         if "active" in t and "customer" in t: return "active_customer_definition"
