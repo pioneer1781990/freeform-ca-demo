@@ -75,13 +75,29 @@ class Orchestrator:
 
     # ---------- glossary gap detection ------------------------------------
     def _glossary_gaps(self, question: str) -> List[str]:
+        """Detect business terms in the question that have no glossary definition.
+
+        Handles synonyms (plural/singular) via GLOSSARY_GUARD_TERMS mapping
+        each surface form to a canonical key. A term is "defined" if ANY
+        glossary entry maps to its canonical key — so 'Active Customer' in
+        the glossary covers both 'active customer' and 'active customers' in
+        the question."""
         ql = question.lower()
         glossary = self.s.glossary()
-        defined_terms = set(glossary['term'].str.lower()) if not glossary.empty else set()
+        defined_keys = set()
+        if not glossary.empty:
+            for term in glossary['term'].astype(str).str.lower():
+                key = GLOSSARY_GUARD_TERMS.get(term)
+                if key:
+                    defined_keys.add(key)
+                # Also: an undefined-in-guard-list term in the glossary just covers itself
+                defined_keys.add(term)
         gaps = []
-        for term in GLOSSARY_GUARD_TERMS:
-            if term in ql and term not in defined_terms:
-                gaps.append(term)
+        seen_keys = set()
+        for surface, key in GLOSSARY_GUARD_TERMS.items():
+            if surface in ql and key not in defined_keys and key not in seen_keys:
+                gaps.append(surface)
+                seen_keys.add(key)
         return gaps
 
     # ---------- look up user's personal definition for a term -----------
@@ -218,9 +234,12 @@ class Orchestrator:
         sql_lower = (result.get("sql") or "").lower()
         ql = question.lower()
         # Agent rule — only cite the agent name, brief
+        scope_tbls = agent_row.get('tables_in_scope')
+        scope_list = list(scope_tbls) if scope_tbls is not None else []
+        cover_list = tables_used if tables_used else scope_list[:3]
         cit.append(Citation(kind="agent_rule",
             label=agent_row['name'] + " agent",
-            detail=f"Routed to this agent (covers {', '.join(tables_used or list(agent_row.get('tables_in_scope') or [])[:3])}).",
+            detail=f"Routed to this agent (covers {', '.join(cover_list)}).",
             extra={"agent_id": agent_row['agent_id']}))
         # Cite ONLY glossary terms that appear in the question OR the SQL
         gt = agent_row.get("glossary_terms")
@@ -356,23 +375,29 @@ class Orchestrator:
         return list(dict.fromkeys(pattern.findall(sql)))
 
     def _log(self, ans: Answer, user_id: str):
-        """Append to _flywheel_query_log via streaming insert."""
+        """Append to _flywheel_query_log via SQL DML (not streaming insert)."""
         try:
-            row = {
-                "query_id": str(uuid.uuid4()),
-                "user_id": user_id,
-                "question_text": ans.question,
-                "generated_sql": ans.sql,
-                "tables_referenced": ans.tables_used,
-                "path_taken": ans.path_taken,
-                "agent_used": ans.agent_used,
-                "confidence_score": ans.confidence,
-                "success": (ans.error is None and ans.path_taken != "refuse"),
-                "error_message": ans.error,
-                "thumbs": None, "correction": None,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            self.s.bq.insert_rows_json(f"{cfg.PROJECT_ID}.{cfg.DATASET}._flywheel_query_log", [row])
+            from google.cloud import bigquery as bq2
+            sql = f"""
+            INSERT INTO {cfg.t('_flywheel_query_log')}
+              (query_id, user_id, question_text, generated_sql, tables_referenced,
+               path_taken, agent_used, confidence_score, success, error_message,
+               thumbs, correction, created_at)
+            VALUES (GENERATE_UUID(), @uid, @q, @sql, @tbls, @path, @agent,
+                    @conf, @success, @err, NULL, NULL, CURRENT_TIMESTAMP())
+            """
+            self.s.bq.query(sql, job_config=bq2.QueryJobConfig(query_parameters=[
+                bq2.ScalarQueryParameter("uid","STRING",user_id),
+                bq2.ScalarQueryParameter("q","STRING",ans.question),
+                bq2.ScalarQueryParameter("sql","STRING",ans.sql),
+                bq2.ArrayQueryParameter("tbls","STRING",ans.tables_used or []),
+                bq2.ScalarQueryParameter("path","STRING",ans.path_taken),
+                bq2.ScalarQueryParameter("agent","STRING",ans.agent_used),
+                bq2.ScalarQueryParameter("conf","FLOAT64",ans.confidence),
+                bq2.ScalarQueryParameter("success","BOOL",
+                    ans.error is None and ans.path_taken != "refuse"),
+                bq2.ScalarQueryParameter("err","STRING",ans.error),
+            ])).result()
         except Exception as e:
             print(f"[log] insert failed: {e}")
 

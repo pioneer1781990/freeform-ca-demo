@@ -94,16 +94,16 @@ class Flywheel:
         return self.s.bq.query(sql).to_dataframe()
 
     def promote_memory_to_semantic(self, memory_key: str, term: str, definition: str):
-        """Analyst-approved: copy memory into glossary, mark memory as promoted,
-        and trigger agent update."""
-        # 1. Write glossary
-        row = {
-            "term": term, "definition": definition, "synonyms": [],
-            "linked_table": None, "linked_column": None, "filter_logic": None,
-            "source": "promoted_from_memory",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.s.bq.insert_rows_json(f"{cfg.PROJECT_ID}.{cfg.DATASET}._flywheel_glossary", [row])
+        """Analyst-approved: copy memory into glossary, mark memory as promoted."""
+        sql = f"""
+        INSERT INTO {cfg.t('_flywheel_glossary')}
+          (term, definition, synonyms, linked_table, linked_column, filter_logic, source, created_at)
+        VALUES (@term, @def, [], NULL, NULL, NULL, 'promoted_from_memory', CURRENT_TIMESTAMP())
+        """
+        self.s.bq.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("term","STRING",term),
+            bigquery.ScalarQueryParameter("def","STRING",definition),
+        ])).result()
         # 2. Mark memories as promoted
         sql = f"""
         UPDATE {cfg.t('_flywheel_memory')}
@@ -121,13 +121,18 @@ class Flywheel:
                           linked_table: Optional[str] = None,
                           linked_column: Optional[str] = None,
                           source: str = "manual"):
-        row = {
-            "term": term, "definition": definition, "synonyms": [],
-            "linked_table": linked_table, "linked_column": linked_column,
-            "filter_logic": None, "source": source,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.s.bq.insert_rows_json(f"{cfg.PROJECT_ID}.{cfg.DATASET}._flywheel_glossary", [row])
+        sql = f"""
+        INSERT INTO {cfg.t('_flywheel_glossary')}
+          (term, definition, synonyms, linked_table, linked_column, filter_logic, source, created_at)
+        VALUES (@term, @def, [], @lt, @lc, NULL, @src, CURRENT_TIMESTAMP())
+        """
+        self.s.bq.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("term","STRING",term),
+            bigquery.ScalarQueryParameter("def","STRING",definition),
+            bigquery.ScalarQueryParameter("lt","STRING",linked_table),
+            bigquery.ScalarQueryParameter("lc","STRING",linked_column),
+            bigquery.ScalarQueryParameter("src","STRING",source),
+        ])).result()
 
     # --- agent CRUD ---------------------------------------------------------
     def register_agent_locally(self, agent_id: str, name: str, description: str,

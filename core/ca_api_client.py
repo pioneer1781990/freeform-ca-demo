@@ -140,6 +140,10 @@ You MUST:
 - For TIMESTAMP columns (orders.created_at, order_items.created_at, support_tickets.created_at, etc.), ALWAYS use TIMESTAMP_TRUNC and TIMESTAMP_SUB — NEVER DATE_TRUNC or DATE_SUB, anywhere in the query (not in SELECT, not in WHERE, not in GROUP BY). Comparing or truncating TIMESTAMP with DATE functions fails in BigQuery.
   Example SELECT: SELECT TIMESTAMP_TRUNC(created_at, MONTH) AS month, SUM(sale_price) FROM ... GROUP BY 1
   Example WHERE: WHERE created_at >= TIMESTAMP_TRUNC(TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY), DAY)
+- Every non-aggregated column in SELECT must appear in GROUP BY. If you compute COUNTIF/SUM/AVG, do NOT also SELECT the raw column unless you're grouping by it. For a simple ratio like CSAT, write:
+    SELECT ROUND(COUNTIF(review_score >= 4) / COUNT(*) * 100, 2) AS csat_pct
+    FROM `{cfg.PROJECT_ID}.{cfg.DATASET}.customer_reviews`
+  — no GROUP BY needed.
 - Be honest about ambiguity: if a key term ("revenue", "active", "stockout") is not defined in the glossary, hedge in the narrative and lean on table descriptions or your own definition with explicit caveat.
 - If the question cannot be answered without an undefined business term, return SQL=null and explain.
 
