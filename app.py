@@ -281,11 +281,36 @@ with left:
             if ans.rows:
                 df = pd.DataFrame(ans.rows)
                 st.dataframe(df, use_container_width=True, hide_index=True)
-            if ans.citations:
-                chip_html = "".join(_chip(c.label, c.kind) for c in ans.citations[:8])
-                st.markdown(f'<div style="font-size:11px;color:#6b7280;margin:8px 0 0;">Sources: {chip_html}</div>',
+            # Citations + SQL grouped in a single details expander.
+            n_cit = len(ans.citations) if ans.citations else 0
+            with st.expander(f"View details ({n_cit} source{'s' if n_cit!=1 else ''} · SQL)"):
+                # --- Sources block ---
+                if ans.citations:
+                    st.markdown(
+                        '<div style="font-size:11px;color:#6b7280;text-transform:uppercase;'
+                        'letter-spacing:.05em;font-weight:600;margin-bottom:6px;">Sources used</div>',
+                        unsafe_allow_html=True)
+                    kind_label = {
+                        "agent_rule":     "🤖 Agent",
+                        "glossary":       "📖 Glossary",
+                        "memory":         "🧠 Memory",
+                        "verified_query": "✅ Verified query",
+                        "table":          "📋 Table",
+                    }
+                    for c in ans.citations:
+                        st.markdown(
+                            f'<div style="margin:6px 0 6px;padding:6px 10px;background:#f9fafb;'
+                            f'border-left:3px solid #d1d5db;border-radius:4px;">'
+                            f'<div style="font-size:11px;color:#6b7280;">{kind_label.get(c.kind, c.kind)}</div>'
+                            f'<div style="font-size:13px;color:#111827;font-weight:500;">{c.label}</div>'
+                            f'<div style="font-size:12px;color:#4b5563;margin-top:2px;">{c.detail}</div>'
+                            f'</div>',
                             unsafe_allow_html=True)
-            with st.expander("View SQL"):
+                # --- SQL block ---
+                st.markdown(
+                    '<div style="font-size:11px;color:#6b7280;text-transform:uppercase;'
+                    'letter-spacing:.05em;font-weight:600;margin:14px 0 6px;">Generated SQL</div>',
+                    unsafe_allow_html=True)
                 if ans.sql:
                     st.code(ans.sql, language="sql")
                 else:
