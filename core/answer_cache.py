@@ -51,7 +51,12 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
             _cit("table", "order_items",
                  "`new-project-495419.cymbal_retail.order_items`"),
         ],
-        "thinking": "Analyzing context\nRetrieved context for 4 tables.\nRunning a query: revenue last month",
+        "thinking": (
+            "**Why this answer is trustworthy:**\n"
+            "- Routed cleanly to the **Sales Analytics agent** (4 tables in scope: orders, order_items, products, users).\n"
+            "- The agent's `Net Revenue` glossary rule (exclude Cancelled and Returned) was applied — no ambiguity.\n"
+            "- Single-table aggregation over `order_items.sale_price`, filtered by status and date window."
+        ),
     },
 
     # ------------------------------------------------------------
@@ -103,18 +108,67 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
             _cit("table", "marketplace_orders",
                  "`new-project-495419.cymbal_retail.marketplace_orders` — filtered to delivered orders."),
         ],
+        "thinking": (
+            "**Why this answer is trustworthy:**\n"
+            "- Routed to the **Customer Experience agent** (review/delivery keywords).\n"
+            "- The agent's system instruction encodes the late-delivery rule "
+            "(`order_delivered_customer_date > order_estimated_delivery_date`) — "
+            "so the metric is consistent across teams, not invented per question.\n"
+            "- `INFORMATION_SCHEMA.JOBS` shows this exact aggregation pattern has been run **12 times** "
+            "by analysts in the last 30 days. The CX agent treats it as a verified query template."
+        ),
     },
 
     # ------------------------------------------------------------
-    # Beat 2b — undefined term: customer churn
+    # Beat 3 — ambiguous term: present disambiguation options
     # ------------------------------------------------------------
     "what's our customer churn rate?": {
         "narrative": (
-            "I made an assumption here: I treated **churn** as a customer with no purchases in the last 90 days who had at least one prior order. "
-            "Under that definition, the churn rate is approximately **38.4%**.\n\n"
-            "### Caveat\n"
-            "Different teams define churn differently — 60 vs 90 days, or based on last contact vs last purchase. "
-            "I'm only **50% confident** until a definition is added to the glossary."
+            "**Churn** means different things to different teams at Cymbal Retail. "
+            "Before I run the numbers I want to make sure we agree on the definition. "
+            "Pick one — I'll answer using that, and you can promote your choice to the "
+            "Dataplex glossary so everyone gets the same number next time."
+        ),
+        "sql": None,
+        "rows": None,
+        "agent_used": None,
+        "path_taken": "needs_disambiguation",
+        "confidence": 0.0,
+        "latency_ms": 900,
+        "tables_used": [],
+        "citations": [],
+        "disambiguation_term": "churn",
+        "options": [
+            {"key": "90d",   "label": "No purchase in the last 90 days",
+             "subtitle": "Most common across retail; balances churn signal with seasonal slack.",
+             "definition": "A customer is churned if they have not placed a non-cancelled, non-returned order in the last 90 days."},
+            {"key": "60d",   "label": "No purchase in the last 60 days (stricter)",
+             "subtitle": "Catches churn earlier — useful for retention triggers.",
+             "definition": "A customer is churned if they have not placed a non-cancelled, non-returned order in the last 60 days."},
+            {"key": "1y",    "label": "No purchase in the last 12 months (loose)",
+             "subtitle": "Reserved for low-frequency categories.",
+             "definition": "A customer is churned if they have not placed an order in the last 12 months."},
+            {"key": "single","label": "Never made a 2nd purchase",
+             "subtitle": "Single-purchase customers, regardless of recency.",
+             "definition": "A customer is churned if they have placed exactly one order, regardless of when."},
+        ],
+    },
+
+    # Variant per option — same numbers shape, different narrative + cited definition
+    "what's our customer churn rate? [post-choose-90d]": {
+        "narrative": (
+            "Using the **90-day rule** you selected, our customer churn rate is **38.4%**.\n\n"
+            "### Insights\n"
+            "- **Magnitude**: Roughly 4 in 10 customers fall into the churned bucket — material enough to warrant a retention campaign.\n"
+            "- **Trend**: This is up 2.1pp from the same window last quarter — worth flagging.\n"
+            "- **Definition sensitivity**: Tightening to 60 days would raise this to ~46%; loosening to 12 months drops it to ~22%."
+        ),
+        "thinking": (
+            "**Why this answer is trustworthy now:**\n"
+            "- You explicitly picked the 90-day definition, so the calculation is unambiguous.\n"
+            "- The Sales agent applied your selection as if it were a glossary term for this session.\n"
+            "- Once you promote this to Dataplex, the next person who asks the same question gets the same number "
+            "without having to choose again."
         ),
         "sql": (
             "WITH last_order AS (\n"
@@ -129,48 +183,131 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
         "rows": [{"churn_pct": 38.4}],
         "agent_used": "cymbal_sales_agent",
         "path_taken": "agent_route",
-        "confidence": 0.50,
-        "latency_ms": 1600,
+        "confidence": 0.95,
+        "latency_ms": 1500,
         "tables_used": ["order_items"],
         "citations": [
             _cit("agent_rule", "Sales Analytics agent",
-                 "Routed; agent has no glossary entry for 'churn'."),
+                 "Routed; using your selected churn definition for this answer."),
+            _cit("memory", "Your selection: 90-day rule",
+                 "A customer is churned if they have not placed a non-cancelled, non-returned order in the last 90 days."),
             _cit("table", "order_items",
                  "`new-project-495419.cymbal_retail.order_items`"),
         ],
-        # Studio reaction
+        # Push a recommendation to Studio: promote the chosen definition.
         "studio_recommendations": [{
             "kind": "define_glossary_term",
             "term": "churn",
-            "title": "Define 'churn' in the glossary",
-            "evidence": "Question answered with a 50% confidence hedge because 'churn' has no definition.",
-            "draft_definition": "A customer who placed an order more than 90 days ago and has not ordered since.",
+            "title": "Promote 'churn' (90-day rule) to Dataplex glossary",
+            "evidence": "Siya picked the 90-day definition during a disambiguation. Promoting locks it in for everyone.",
+            "draft_definition": "A customer is churned if they have not placed a non-cancelled, non-returned order in the last 90 days.",
         }],
     },
 
-    # After definition is added, re-ask works confidently
-    "what's our customer churn rate? [post-define]": {
+    "what's our customer churn rate? [post-choose-60d]": {
         "narrative": (
-            "Our customer churn rate is **38.4%**, using the definition you just added: "
-            "*a customer with no purchases in the last 90 days who had at least one prior order*.\n\n"
+            "Using the **60-day rule** you selected, our customer churn rate is **45.7%**.\n\n"
             "### Insights\n"
-            "- **Magnitude**: Roughly 4 in 10 customers fall into the churned bucket — material enough to warrant a retention campaign.\n"
-            "- **Definition Sensitivity**: Tightening to 60 days raises this number; consider tracking both."
+            "- **Earlier signal**: 60 days catches churners ~30 days sooner than the 90-day rule — useful for win-back campaigns.\n"
+            "- **Watch the noise**: 60-day windows are more sensitive to seasonal lulls; pair with category-level segmentation."
         ),
-        "sql": None,  # same SQL as above
-        "rows": [{"churn_pct": 38.4}],
+        "thinking": (
+            "**Why this answer is trustworthy now:**\n"
+            "- You explicitly picked the 60-day definition, so the calculation is unambiguous.\n"
+            "- The Sales agent applied your selection as a temporary glossary term.\n"
+            "- Promote this in Studio to lock it in for the rest of the team."
+        ),
+        "rows": [{"churn_pct": 45.7}],
         "agent_used": "cymbal_sales_agent",
         "path_taken": "agent_route",
         "confidence": 0.95,
         "latency_ms": 1500,
         "tables_used": ["order_items"],
         "citations": [
-            _cit("agent_rule", "Sales Analytics agent", "Same routing as before."),
-            _cit("glossary", "churn", "A customer who placed an order more than 90 days ago and has not ordered since.",
-                 just_defined=True),
+            _cit("agent_rule", "Sales Analytics agent",
+                 "Routed; using your selected churn definition."),
+            _cit("memory", "Your selection: 60-day rule",
+                 "A customer is churned if they have not placed a non-cancelled, non-returned order in the last 60 days."),
             _cit("table", "order_items",
                  "`new-project-495419.cymbal_retail.order_items`"),
         ],
+        "studio_recommendations": [{
+            "kind": "define_glossary_term",
+            "term": "churn",
+            "title": "Promote 'churn' (60-day rule) to Dataplex glossary",
+            "evidence": "Siya picked the 60-day definition during a disambiguation.",
+            "draft_definition": "A customer is churned if they have not placed a non-cancelled, non-returned order in the last 60 days.",
+        }],
+    },
+
+    "what's our customer churn rate? [post-choose-1y]": {
+        "narrative": (
+            "Using the **12-month rule** you selected, our customer churn rate is **22.1%**.\n\n"
+            "### Insights\n"
+            "- A looser window suits low-frequency categories (e.g., home goods).\n"
+            "- For fashion/accessories, this likely under-counts true churn."
+        ),
+        "thinking": (
+            "**Why this answer is trustworthy now:**\n"
+            "- You explicitly picked the 12-month definition.\n"
+            "- The agent applied your selection — no guessing on the window length.\n"
+            "- Promote to share the choice with everyone else."
+        ),
+        "rows": [{"churn_pct": 22.1}],
+        "agent_used": "cymbal_sales_agent",
+        "path_taken": "agent_route",
+        "confidence": 0.95,
+        "latency_ms": 1500,
+        "tables_used": ["order_items"],
+        "citations": [
+            _cit("agent_rule", "Sales Analytics agent", "Routed; applied 12-month rule."),
+            _cit("memory", "Your selection: 12-month rule",
+                 "A customer is churned if they have not placed an order in the last 12 months."),
+            _cit("table", "order_items",
+                 "`new-project-495419.cymbal_retail.order_items`"),
+        ],
+        "studio_recommendations": [{
+            "kind": "define_glossary_term",
+            "term": "churn",
+            "title": "Promote 'churn' (12-month rule) to Dataplex glossary",
+            "evidence": "Siya picked the 12-month definition during a disambiguation.",
+            "draft_definition": "A customer is churned if they have not placed an order in the last 12 months.",
+        }],
+    },
+
+    "what's our customer churn rate? [post-choose-single]": {
+        "narrative": (
+            "Using the **single-purchase rule** you selected, **51.3%** of our customers have churned by your definition.\n\n"
+            "### Insights\n"
+            "- This is a high number because most retailers have a long tail of one-time buyers.\n"
+            "- Often paired with a 'never repeated' filter for acquisition-quality analysis."
+        ),
+        "thinking": (
+            "**Why this answer is trustworthy now:**\n"
+            "- You explicitly picked the single-purchase definition.\n"
+            "- The agent treats one-time buyers as churned regardless of recency.\n"
+            "- Promote to lock this definition in for the team."
+        ),
+        "rows": [{"churn_pct": 51.3}],
+        "agent_used": "cymbal_sales_agent",
+        "path_taken": "agent_route",
+        "confidence": 0.95,
+        "latency_ms": 1500,
+        "tables_used": ["order_items"],
+        "citations": [
+            _cit("agent_rule", "Sales Analytics agent", "Routed; applied single-purchase rule."),
+            _cit("memory", "Your selection: single-purchase rule",
+                 "A customer is churned if they have placed exactly one order, regardless of when."),
+            _cit("table", "order_items",
+                 "`new-project-495419.cymbal_retail.order_items`"),
+        ],
+        "studio_recommendations": [{
+            "kind": "define_glossary_term",
+            "term": "churn",
+            "title": "Promote 'churn' (single-purchase rule) to Dataplex glossary",
+            "evidence": "Siya picked the single-purchase definition.",
+            "draft_definition": "A customer is churned if they have placed exactly one order, regardless of when.",
+        }],
     },
 
     # ------------------------------------------------------------
@@ -223,13 +360,21 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
             "kind": "promote_verified_queries",
             "agent_id": "cymbal_customer_experience_agent",
             "title": "Promote 3 query-history patterns to CX agent",
-            "evidence": "Question hedged at 65% because the CX agent lacked a verified template for this join. Three historical patterns from JOBS already solve it cleanly.",
+            "evidence": "Question hedged because the CX agent lacked a verified template for this join. Three historical patterns from JOBS already solve it cleanly.",
             "patterns": [
                 "Review score by customer state (Alice, May 12)",
                 "Review distribution by city (Dave, May 8)",
                 "CSAT by region with seller filter (Grace, May 14)",
             ],
         }],
+        "thinking": (
+            "**Why this answer should be treated cautiously:**\n"
+            "- Routed to the **Customer Experience agent**, but its `example_queries` don't include this exact join.\n"
+            "- I fell back to mining `INFORMATION_SCHEMA.JOBS` and found that 3 historical analyst queries solved this "
+            "by joining `customer_reviews → marketplace_orders → marketplace_customers`. I applied that pattern.\n"
+            "- Since this came from history rather than a verified rule, the result is reconstructed rather than authoritative. "
+            "Promote the patterns in Studio so the agent learns them as verified queries."
+        ),
     },
 
     "average review score by brazilian state [post-promote]": {
@@ -265,6 +410,12 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
                  just_promoted=True),
             _cit("table", "customer_reviews", "`new-project-495419.cymbal_retail.customer_reviews`"),
         ],
+        "thinking": (
+            "**Why this answer is trustworthy now:**\n"
+            "- The CX agent now has the customer-state join pattern in its `example_queries`.\n"
+            "- This is the same data the previous answer derived from history — but now it's authoritative, "
+            "because the agent owns the rule rather than reconstructing it each time."
+        ),
     },
 
     # ------------------------------------------------------------
@@ -295,6 +446,14 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
             "evidence": "3-table join needed; co-occurrence of users + products + inventory_items in 12 session queries.",
             "edges": ["Customer → Purchased → Product", "Product → StockedAt → DistributionCenter"],
         }],
+        "thinking": (
+            "**Why this answer is shaky:**\n"
+            "- This is a classic multi-hop question: `users → order_items → products → inventory_items`.\n"
+            "- I attempted a 4-table SQL join, but `inventory_items` represents historical stocking events, "
+            "so each top customer appears linked to dozens of DCs — the result isn't what the question really asks.\n"
+            "- Adding `Customer → Product → DC` edges to the property graph would let me answer this in **one traversal**. "
+            "Studio is recommending exactly that."
+        ),
     },
 
     "for our top 10 customers, which distribution centers stock the products they buy? [post-graph]": {
@@ -334,6 +493,12 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
                  "BQ Property Graph (just enhanced with Customer→Product→DC edges).",
                  just_created=True),
         ],
+        "thinking": (
+            "**Why this answer is trustworthy now:**\n"
+            "- The property graph now contains both `Customer → Purchased → Product` and `Product → StockedAt → DC` edges.\n"
+            "- This becomes a single `MATCH (c)-[:Purchased]->(p)-[:StockedAt]->(d)` traversal instead of a 4-table join.\n"
+            "- Same data underneath, but the graph structure expresses the intent of the question directly."
+        ),
     },
 
     # ------------------------------------------------------------
@@ -374,6 +539,14 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
             "target_table": "customer_reviews",
             "target_column": "review_comment_message",
         }],
+        "thinking": (
+            "**Why this answer is shallow:**\n"
+            "- The free-text `review_comment_message` column is in Portuguese, and my only tool here is keyword `LIKE`.\n"
+            "- I matched 1,247 reviews on a handful of English words — but I missed every complaint that used "
+            "`atraso`, `danificado`, `quebrado`, `cor errada`, or any other Portuguese term.\n"
+            "- This is a semantic question. It needs vector embeddings on the text column so similar complaints "
+            "cluster regardless of exact wording. Studio is suggesting we build them."
+        ),
     },
 
     "what are customers most upset about in their reviews? [post-embeddings]": {
@@ -415,6 +588,13 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
                  "Vector index over review_comment_message (just created).",
                  just_created=True),
         ],
+        "thinking": (
+            "**Why this answer is trustworthy now:**\n"
+            "- The CX agent now calls `VECTOR_SEARCH` over the new `review_embeddings` table.\n"
+            "- Embeddings capture meaning rather than exact words, so `atraso`, `não chegou`, `demorou demais` "
+            "all cluster as 'late delivery' even though they share no keywords.\n"
+            "- Themes are derived from semantic similarity — language-agnostic."
+        ),
     },
 }
 

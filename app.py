@@ -302,13 +302,12 @@ with left:
             st.markdown(
                 f'<div style="margin:8px 0 4px;">{_path_chip(ans.path_taken)}'
                 f'{_badge(_agent_label(ans.agent_used))}'
-                f'{_badge(f"{int(ans.confidence*100)}% confidence")}'
                 f'{_badge(f"{ans.latency_ms/1000:.1f}s") if ans.latency_ms else ""}'
                 f'</div>',
                 unsafe_allow_html=True)
             if ans.thinking:
                 with st.expander("Show reasoning"):
-                    st.write(ans.thinking)
+                    st.markdown(ans.thinking)
             st.markdown(f'<div style="font-size:14px;line-height:1.6;color:#111827;margin:4px 0 8px;">{ans.narrative}</div>',
                         unsafe_allow_html=True)
             if ans.rows:
