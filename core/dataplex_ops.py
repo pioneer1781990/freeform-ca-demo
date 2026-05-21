@@ -1,94 +1,96 @@
-"""Dataplex Catalog write helpers.
+"""Dataplex BusinessGlossary term writes via direct REST.
 
-Best-effort writes of glossary terms into Dataplex so they show up in the GCP
-console. Failures are logged but never raised — the caller (flywheel) must
-always be able to fall back to the BQ-only path.
+The python SDK's BusinessGlossaryServiceClient sends requests in a shape
+the regional endpoint returns 404 for. Direct REST calls work cleanly
+and surface terms in the GCP Dataplex console.
+
+All writes are best-effort: failures log and return None so the caller
+(flywheel) can still write to BQ unconditionally.
 """
 from __future__ import annotations
 import re
 from typing import Optional
 
-from google.api_core import client_options as _client_options_lib
-from google.api_core import exceptions as gcp_exceptions
-from google.cloud import dataplex_v1
+import requests
+import google.auth
+import google.auth.transport.requests as _gauth_req
 
 import config as cfg
 
-
-# Defaults for the Cymbal Retail demo.
 DATAPLEX_LOCATION = "us-central1"
 GLOSSARY_ID = "cymbal-retail-glossary"
+_API_BASE = "https://dataplex.googleapis.com/v1"
 
 
-def _client() -> dataplex_v1.BusinessGlossaryServiceClient:
-    """Build a regional Dataplex business-glossary client."""
-    endpoint = f"{DATAPLEX_LOCATION}-dataplex.googleapis.com"
-    return dataplex_v1.BusinessGlossaryServiceClient(
-        client_options=_client_options_lib.ClientOptions(api_endpoint=endpoint)
-    )
+def _token() -> Optional[str]:
+    try:
+        creds, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        creds.refresh(_gauth_req.Request())
+        return creds.token
+    except Exception as e:
+        print(f"[dataplex_ops._token] auth failed: {e}")
+        return None
 
 
 def _glossary_parent() -> str:
-    return (
-        f"projects/{cfg.PROJECT_ID}/locations/{DATAPLEX_LOCATION}"
-        f"/glossaries/{GLOSSARY_ID}"
-    )
+    return (f"projects/{cfg.PROJECT_ID}/locations/{DATAPLEX_LOCATION}"
+            f"/glossaries/{GLOSSARY_ID}")
 
 
 def _term_id_for(term: str) -> str:
-    """Dataplex term IDs must be lowercase alphanumeric + hyphens.
-
-    Keep it deterministic so re-promoting the same term collides (caller
-    treats AlreadyExists as success).
-    """
-    slug = re.sub(r"[^a-z0-9-]+", "-", term.lower()).strip("-")
-    if not slug:
-        slug = "term"
-    # Dataplex term IDs are limited (<=63 chars in practice).
+    slug = re.sub(r"[^a-z0-9-]+", "-", term.lower()).strip("-") or "term"
     return slug[:63]
 
 
 def write_glossary_term(term: str, definition: str) -> Optional[str]:
-    """Create a glossary term in Dataplex. Returns the full resource name on
-    success, or None if the write failed (including AlreadyExists — the row
-    is already present, so caller can treat it as a no-op success).
-
-    Never raises. Logs to stdout on error.
-    """
+    """Create a glossary term via REST. Returns full resource name on success,
+    or None on failure. Idempotent: AlreadyExists is treated as success."""
+    tok = _token()
+    if not tok:
+        return None
+    parent = _glossary_parent()
+    term_id = _term_id_for(term)
+    url = f"{_API_BASE}/{parent}/terms?termId={term_id}"
+    body = {
+        "parent": parent,
+        "displayName": (term or term_id)[:255],
+        "description": (definition or "")[:1024],
+    }
+    headers = {"Authorization": f"Bearer {tok}",
+               "Content-Type": "application/json"}
     try:
-        client = _client()
-        parent = _glossary_parent()
-        term_id = _term_id_for(term)
-        gt = dataplex_v1.GlossaryTerm(
-            display_name=term[:255] if term else term_id,
-            description=(definition or "")[:1024],
-            parent=parent,
-        )
-        resp = client.create_glossary_term(
-            parent=parent, term=gt, term_id=term_id,
-        )
-        return resp.name
-    except gcp_exceptions.AlreadyExists:
-        # Term already exists — return the deterministic name.
-        return f"{_glossary_parent()}/terms/{_term_id_for(term)}"
+        r = requests.post(url, json=body, headers=headers, timeout=10)
+        if r.status_code == 200:
+            return r.json().get("name", f"{parent}/terms/{term_id}")
+        if r.status_code == 409:
+            # Already exists — treat as success
+            return f"{parent}/terms/{term_id}"
+        print(f"[dataplex_ops.write_glossary_term] {term!r} HTTP {r.status_code}: "
+              f"{r.text[:200]}")
+        return None
     except Exception as e:
-        print(f"[dataplex_ops.write_glossary_term] best-effort write failed "
-              f"for {term!r}: {type(e).__name__}: {str(e)[:200]}")
+        print(f"[dataplex_ops.write_glossary_term] {term!r} request failed: {e}")
         return None
 
 
-def delete_glossary_term(term: str) -> bool:
-    """Delete a glossary term by its deterministic ID. Returns True on success
-    (or NotFound). Never raises.
-    """
+def delete_glossary_term(term_or_full_name: str) -> bool:
+    """Delete a glossary term. Accepts either bare term display name (will
+    slugify) or full resource name. Returns True on success or NotFound."""
+    tok = _token()
+    if not tok:
+        return False
+    if term_or_full_name.startswith("projects/"):
+        name = term_or_full_name
+    else:
+        name = f"{_glossary_parent()}/terms/{_term_id_for(term_or_full_name)}"
+    headers = {"Authorization": f"Bearer {tok}"}
     try:
-        client = _client()
-        name = f"{_glossary_parent()}/terms/{_term_id_for(term)}"
-        client.delete_glossary_term(name=name)
-        return True
-    except gcp_exceptions.NotFound:
-        return True
+        r = requests.delete(f"{_API_BASE}/{name}", headers=headers, timeout=10)
+        if r.status_code in (200, 404):
+            return True
+        print(f"[dataplex_ops.delete_glossary_term] HTTP {r.status_code}: {r.text[:200]}")
+        return False
     except Exception as e:
-        print(f"[dataplex_ops.delete_glossary_term] failed for {term!r}: "
-              f"{type(e).__name__}: {str(e)[:200]}")
+        print(f"[dataplex_ops.delete_glossary_term] request failed: {e}")
         return False

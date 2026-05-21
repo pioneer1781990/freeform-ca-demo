@@ -24,30 +24,34 @@ st.set_page_config(page_title="Freeform CA Demo", page_icon="✦", layout="wide"
                    initial_sidebar_state="collapsed")
 st.markdown(BASE_CSS, unsafe_allow_html=True)
 st.markdown("""<style>
-/* Demo-specific layout */
-.ask-pane    { background: #ffffff; padding: 16px 24px; min-height: 60vh; }
-.studio-pane { background: #fafbff; padding: 18px 24px; border-top: 1px solid #e5e7eb; min-height: 30vh; }
-.divider     { height: 1px; background: #e5e7eb; margin: 16px 0; }
+/* Wider container so the L/R split has breathing room */
+.main .block-container { max-width: 1400px; padding-top: 0.5rem; }
+/* Vertical divider between Ask (left) and Studio (right) */
+div[data-testid="stHorizontalBlock"] > div:first-child { border-right: 1px solid #ececec; padding-right: 16px; }
+div[data-testid="stHorizontalBlock"] > div:nth-child(2) { padding-left: 20px; }
+
+.pane-label  { font-size: 11px; color: #6b7280; text-transform: uppercase;
+               letter-spacing: .06em; margin-bottom: 8px; font-weight: 600; }
 .studio-hdr  { font-size: 14px; font-weight: 600; color: #111827;
                display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .studio-hdr .dot { width: 8px; height: 8px; border-radius: 50%;
                    background: #10b981; display: inline-block; }
 .rec-card {
   background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px;
-  padding: 12px 16px; margin-bottom: 10px;
+  padding: 12px 14px; margin-bottom: 10px;
   border-left: 3px solid #2563eb;
 }
-.rec-title { font-weight: 600; color: #111827; font-size: 14px; }
-.rec-evidence { font-size: 12px; color: #6b7280; margin: 4px 0 8px; }
-.rec-detail   { font-size: 12px; color: #4b5563; }
+.rec-title { font-weight: 600; color: #111827; font-size: 13px; }
+.rec-evidence { font-size: 12px; color: #6b7280; margin: 4px 0 8px; line-height: 1.4; }
+.rec-detail   { font-size: 12px; color: #4b5563; margin: 2px 0; }
 .studio-built {
   background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
   padding: 10px 14px; margin-bottom: 14px;
-  font-size: 13px; color: #14532d;
+  font-size: 12px; color: #14532d; line-height: 1.6;
 }
 .studio-built .label { font-weight: 600; }
 
-/* Sticky chat input */
+/* Chat input pinned at bottom — only across the LEFT column */
 [data-testid="stChatInput"] {
   border: 1px solid #d1d5db !important;
   border-radius: 12px !important;
@@ -56,7 +60,7 @@ st.markdown("""<style>
 }
 [data-testid="stChatInput"] textarea {
   background: #ffffff !important;
-  font-size: 15px !important;
+  font-size: 14px !important;
   color: #111827 !important;
 }
 </style>""", unsafe_allow_html=True)
@@ -210,11 +214,11 @@ def _apply_recommendation(rec):
     # Remove the recommendation
     SS.studio_recs = [r for r in SS.studio_recs if r["id"] != rec["id"]]
 
-# --- LAYOUT ----------------------------------------------------------------
+# --- LAYOUT (left = Ask, right = Studio) -----------------------------------
 # Header
 st.markdown("""
-<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 20px;
-            border-bottom:1px solid #e5e7eb;background:#fff;">
+<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 8px;
+            border-bottom:1px solid #e5e7eb;background:#fff;margin-bottom:12px;">
   <div style="display:flex;align-items:center;gap:10px;">
     <span style="font-size:18px;background:linear-gradient(135deg,#4285f4,#9b72f4);
                 -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">✦</span>
@@ -225,135 +229,140 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="ask-pane">', unsafe_allow_html=True)
-st.markdown('<div style="font-size:13px;color:#6b7280;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">Ask</div>', unsafe_allow_html=True)
+# Split: Ask on the left (60%), Studio on the right (40%)
+left, right = st.columns([0.6, 0.4], gap="small")
 
-# Empty state — suggestion chips
-if not SS.history:
-    st.markdown('<div style="text-align:center;padding:24px 0 16px;">'
-                '<div style="font-size:22px;font-weight:600;color:#111827;">Hi Siya — what would you like to know?</div>'
-                '<div style="font-size:14px;color:#6b7280;margin-top:4px;">Try one of these or ask anything about Cymbal Retail.</div>'
-                '</div>', unsafe_allow_html=True)
-    suggestions = [
-        "What was our revenue last month?",
-        "Top 10 selling products this quarter by revenue",
-        "What's our customer churn rate?",
-        "Average review score by Brazilian state",
-    ]
-    cols = st.columns(len(suggestions))
-    for i, s in enumerate(suggestions):
-        with cols[i]:
-            if st.button(s, key=f"sg_{i}", use_container_width=True):
-                _ask(s)
-                st.rerun()
+# ===== LEFT: Ask =====
+with left:
+    st.markdown('<div class="pane-label">Ask</div>', unsafe_allow_html=True)
 
-# Render conversation
-for i, msg in enumerate(SS.history):
-    if msg["role"] == "user":
-        st.markdown(
-            f'<div style="background:#eef4ff;color:#111827;padding:10px 16px;'
-            f'border-radius:16px 16px 4px 16px;margin:18px 0 6px auto;max-width:70%;'
-            f'width:fit-content;font-size:14px;line-height:1.5;">{msg["content"]}</div>',
-            unsafe_allow_html=True)
-    else:
-        ans: Answer = msg["answer"]
-        # Path badge row
-        st.markdown(
-            f'<div style="margin:10px 0 6px;">{_path_chip(ans.path_taken)}'
-            f'{_badge(_agent_label(ans.agent_used))}'
-            f'{_badge(f"{int(ans.confidence*100)}% confidence")}'
-            f'{_badge(f"{ans.latency_ms/1000:.1f}s") if ans.latency_ms else ""}'
-            f'</div>',
-            unsafe_allow_html=True)
-        if ans.thinking:
-            with st.expander("Show reasoning"):
-                st.write(ans.thinking)
-        st.markdown(f'<div style="font-size:15px;line-height:1.65;color:#111827;margin:6px 0 10px;">{ans.narrative}</div>',
-                    unsafe_allow_html=True)
-        if ans.rows:
-            df = pd.DataFrame(ans.rows)
-            st.dataframe(df, use_container_width=True, hide_index=True)
-        # Citations as chips
-        if ans.citations:
-            chip_html = "".join(_chip(c.label, c.kind) for c in ans.citations[:8])
-            st.markdown(f'<div style="font-size:12px;color:#6b7280;margin:8px 0 0;">Sources: {chip_html}</div>',
+    # Empty state — suggestion chips
+    if not SS.history:
+        st.markdown('<div style="text-align:center;padding:24px 0 12px;">'
+                    '<div style="font-size:20px;font-weight:600;color:#111827;">Hi Siya — what would you like to know?</div>'
+                    '<div style="font-size:13px;color:#6b7280;margin-top:4px;">Try one of these or ask anything about Cymbal Retail.</div>'
+                    '</div>', unsafe_allow_html=True)
+        suggestions = [
+            "What was our revenue last month?",
+            "Top 10 selling products this quarter by revenue",
+            "What's our customer churn rate?",
+            "Average review score by Brazilian state",
+        ]
+        # Two rows of two so they fit comfortably in the narrower left column
+        c1, c2 = st.columns(2)
+        for i, s in enumerate(suggestions):
+            with (c1 if i % 2 == 0 else c2):
+                if st.button(s, key=f"sg_{i}", use_container_width=True):
+                    _ask(s)
+                    st.rerun()
+
+    # Render conversation
+    for i, msg in enumerate(SS.history):
+        if msg["role"] == "user":
+            st.markdown(
+                f'<div style="background:#eef4ff;color:#111827;padding:10px 16px;'
+                f'border-radius:16px 16px 4px 16px;margin:14px 0 6px auto;max-width:80%;'
+                f'width:fit-content;font-size:14px;line-height:1.5;">{msg["content"]}</div>',
+                unsafe_allow_html=True)
+        else:
+            ans: Answer = msg["answer"]
+            st.markdown(
+                f'<div style="margin:8px 0 4px;">{_path_chip(ans.path_taken)}'
+                f'{_badge(_agent_label(ans.agent_used))}'
+                f'{_badge(f"{int(ans.confidence*100)}% confidence")}'
+                f'{_badge(f"{ans.latency_ms/1000:.1f}s") if ans.latency_ms else ""}'
+                f'</div>',
+                unsafe_allow_html=True)
+            if ans.thinking:
+                with st.expander("Show reasoning"):
+                    st.write(ans.thinking)
+            st.markdown(f'<div style="font-size:14px;line-height:1.6;color:#111827;margin:4px 0 8px;">{ans.narrative}</div>',
                         unsafe_allow_html=True)
-        with st.expander("View SQL"):
-            if ans.sql:
-                st.code(ans.sql, language="sql")
-            else:
-                st.caption("(no SQL — answer used a verified template or cached result)")
+            if ans.rows:
+                df = pd.DataFrame(ans.rows)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            if ans.citations:
+                chip_html = "".join(_chip(c.label, c.kind) for c in ans.citations[:8])
+                st.markdown(f'<div style="font-size:11px;color:#6b7280;margin:8px 0 0;">Sources: {chip_html}</div>',
+                            unsafe_allow_html=True)
+            with st.expander("View SQL"):
+                if ans.sql:
+                    st.code(ans.sql, language="sql")
+                else:
+                    st.caption("(no SQL — verified template or cached)")
 
-st.markdown('</div>', unsafe_allow_html=True)
+# ===== RIGHT: Studio =====
+with right:
+    st.markdown(
+        '<div class="studio-hdr"><span class="dot"></span> Studio '
+        f'<span style="color:#6b7280;font-weight:400;font-size:11px;">'
+        f'· {len(SS.studio_recs)} open · {len(SS.built_today)} applied</span></div>',
+        unsafe_allow_html=True)
 
-# Chat input (sits at bottom of Ask pane)
+    # Built-today summary
+    if SS.built_today:
+        inner = "<br>".join(f"• {x}" for x in SS.built_today[-6:])
+        st.markdown(f'<div class="studio-built"><span class="label">Built today:</span><br>{inner}</div>',
+                    unsafe_allow_html=True)
+
+    # Active recommendations
+    if not SS.studio_recs:
+        st.markdown(
+            '<div style="background:#fff;border:1px dashed #d1d5db;border-radius:10px;'
+            'padding:24px 14px;text-align:center;color:#9ca3af;font-size:12px;line-height:1.5;">'
+            'No recommendations yet.<br>'
+            'Ask a question that exposes a gap to see one appear here.'
+            '</div>', unsafe_allow_html=True)
+    else:
+        for rec in SS.studio_recs:
+            with st.container():
+                st.markdown('<div class="rec-card">', unsafe_allow_html=True)
+                st.markdown(f'<div class="rec-title">{rec["title"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="rec-evidence">{rec["evidence"]}</div>', unsafe_allow_html=True)
+                if rec["kind"] == "define_glossary_term":
+                    st.text_area("Definition", value=rec.get("draft_definition",""),
+                                 key=f"def_{rec['id']}", height=68, label_visibility="collapsed")
+                    if st.button("Save to Dataplex glossary", key=f"act_{rec['id']}", type="primary",
+                                 use_container_width=True):
+                        edited = SS.get(f"def_{rec['id']}") or rec.get("draft_definition","")
+                        rec["draft_definition"] = edited
+                        _apply_recommendation(rec)
+                        st.rerun()
+                elif rec["kind"] == "promote_verified_queries":
+                    for p in rec.get("patterns", []):
+                        st.markdown(f'<div class="rec-detail">• {p}</div>', unsafe_allow_html=True)
+                    if st.button("Promote to CX agent", key=f"act_{rec['id']}", type="primary",
+                                 use_container_width=True):
+                        _apply_recommendation(rec)
+                        st.rerun()
+                elif rec["kind"] == "add_graph_edge":
+                    for e in rec.get("edges", []):
+                        st.markdown(f'<div class="rec-detail">• {e}</div>', unsafe_allow_html=True)
+                    if st.button("Add to graph", key=f"act_{rec['id']}", type="primary",
+                                 use_container_width=True):
+                        _apply_recommendation(rec)
+                        st.rerun()
+                elif rec["kind"] == "create_embeddings":
+                    st.markdown(f'<div class="rec-detail">Target: <code>{rec["target_table"]}.{rec["target_column"]}</code></div>',
+                                unsafe_allow_html=True)
+                    if st.button("Create embeddings", key=f"act_{rec['id']}", type="primary",
+                                 use_container_width=True):
+                        _apply_recommendation(rec)
+                        st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+
+    # Reset
+    st.markdown('<div style="margin-top:16px;"></div>', unsafe_allow_html=True)
+    if st.button("↺  Reset demo", key="reset_demo", use_container_width=True):
+        SS.history = []
+        SS.studio_recs = []
+        SS.built_today = []
+        SS.post_action_state = {}
+        sess.reset()
+        st.rerun()
+
+# Chat input pinned at bottom (Streamlit shows it across full width)
 prompt = st.chat_input("Ask anything about your data…")
 if prompt:
     _ask(prompt)
     st.rerun()
-
-# --- STUDIO PANEL ----------------------------------------------------------
-st.markdown('<div class="studio-pane">', unsafe_allow_html=True)
-st.markdown(
-    '<div class="studio-hdr"><span class="dot"></span> Studio — analyst recommendations '
-    f'<span style="color:#6b7280;font-weight:400;font-size:12px;">'
-    f'· {len(SS.studio_recs)} open · {len(SS.built_today)} applied today</span></div>',
-    unsafe_allow_html=True)
-
-# Built-today summary
-if SS.built_today:
-    inner = " &nbsp;·&nbsp; ".join(SS.built_today[-6:])
-    st.markdown(f'<div class="studio-built"><span class="label">Built today:</span> {inner}</div>',
-                unsafe_allow_html=True)
-
-# Active recommendations
-if not SS.studio_recs:
-    st.markdown(
-        '<div style="background:#fff;border:1px dashed #d1d5db;border-radius:10px;'
-        'padding:24px;text-align:center;color:#9ca3af;font-size:13px;">'
-        'No recommendations right now. Ask a question that exposes a gap to see one appear.'
-        '</div>', unsafe_allow_html=True)
-else:
-    for rec in SS.studio_recs:
-        with st.container():
-            st.markdown('<div class="rec-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="rec-title">{rec["title"]}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="rec-evidence">{rec["evidence"]}</div>', unsafe_allow_html=True)
-            if rec["kind"] == "define_glossary_term":
-                st.text_area("Definition", value=rec.get("draft_definition",""),
-                             key=f"def_{rec['id']}", height=68, label_visibility="collapsed")
-                if st.button("Save to glossary", key=f"act_{rec['id']}", type="primary"):
-                    edited = SS.get(f"def_{rec['id']}") or rec.get("draft_definition","")
-                    rec["draft_definition"] = edited
-                    _apply_recommendation(rec)
-                    st.rerun()
-            elif rec["kind"] == "promote_verified_queries":
-                for p in rec.get("patterns", []):
-                    st.markdown(f'<div class="rec-detail">• {p}</div>', unsafe_allow_html=True)
-                if st.button("Promote to CX agent", key=f"act_{rec['id']}", type="primary"):
-                    _apply_recommendation(rec)
-                    st.rerun()
-            elif rec["kind"] == "add_graph_edge":
-                for e in rec.get("edges", []):
-                    st.markdown(f'<div class="rec-detail">• {e}</div>', unsafe_allow_html=True)
-                if st.button("Add to graph", key=f"act_{rec['id']}", type="primary"):
-                    _apply_recommendation(rec)
-                    st.rerun()
-            elif rec["kind"] == "create_embeddings":
-                st.markdown(f'<div class="rec-detail">Target: <code>{rec["target_table"]}.{rec["target_column"]}</code></div>',
-                            unsafe_allow_html=True)
-                if st.button("Create embeddings", key=f"act_{rec['id']}", type="primary"):
-                    _apply_recommendation(rec)
-                    st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-# Reset link
-st.markdown('<div style="margin-top:18px;text-align:right;">', unsafe_allow_html=True)
-if st.button("↺  Reset demo (clear conversation + recs)", key="reset_demo"):
-    SS.history = []
-    SS.studio_recs = []
-    SS.built_today = []
-    SS.post_action_state = {}
-    sess.reset()
-    st.rerun()
-st.markdown('</div></div>', unsafe_allow_html=True)
