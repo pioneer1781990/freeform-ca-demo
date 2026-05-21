@@ -244,7 +244,7 @@ with left:
                     '</div>', unsafe_allow_html=True)
         suggestions = [
             "What was our revenue last month?",
-            "Top 10 selling products this quarter by revenue",
+            "What's our late delivery rate by month?",
             "What's our customer churn rate?",
             "Average review score by Brazilian state",
         ]

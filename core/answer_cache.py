@@ -55,51 +55,53 @@ ANSWERS: Dict[str, Dict[str, Any]] = {
     },
 
     # ------------------------------------------------------------
-    # Beat 2a — Sales question with query-history citation
+    # Beat 2 — CX agent answer driven by instruction + JOBS history
     # ------------------------------------------------------------
-    "top 10 selling products this quarter by revenue": {
+    "what's our late delivery rate by month?": {
         "narrative": (
-            "The top 10 products by revenue this quarter are led by **Indestructable Aluminum Aluma Wallet — RED** at $14,288, "
-            "followed by **GENUINE LEATHER SNAP ON STUDDED WHITE PIANO BELT** at $11,945. "
-            "Wallets and belts dominate the top five.\n\n"
+            "Late delivery rate by month for the last 6 months, peaking in **April at 8.1%** "
+            "and dropping to **6.4% in May**.\n\n"
             "### Insights\n"
-            "- **Category Concentration**: Men's accessories account for 7 of the top 10.\n"
-            "- **Pattern Match**: This is a well-traveled question — 14 prior queries followed this exact join shape."
+            "- **Trend**: Late rate is improving since the April peak — likely tied to carrier negotiations.\n"
+            "- **Instruction in play**: The CX agent's system instruction defines late as "
+            "`order_delivered_customer_date > order_estimated_delivery_date`. Without that rule, "
+            "different teams would arrive at different numbers (some count by carrier scan, others by "
+            "promised vs delivered).\n"
+            "- **Pattern Match**: `INFORMATION_SCHEMA.JOBS` shows this exact aggregation has been "
+            "run **12 times** by analysts in the last 30 days — recognized as a verified query template."
         ),
         "sql": (
-            "SELECT p.name AS product, SUM(oi.sale_price) AS revenue\n"
-            "FROM `new-project-495419.cymbal_retail.order_items` oi\n"
-            "JOIN `new-project-495419.cymbal_retail.products` p ON oi.product_id = p.id\n"
-            "WHERE oi.status NOT IN ('Cancelled','Returned')\n"
-            "  AND oi.created_at >= TIMESTAMP(DATE_TRUNC(CURRENT_DATE(), QUARTER))\n"
-            "GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+            "SELECT TIMESTAMP_TRUNC(order_purchase_timestamp, MONTH) AS month,\n"
+            "       COUNTIF(order_delivered_customer_date > order_estimated_delivery_date) /\n"
+            "         COUNTIF(order_delivered_customer_date IS NOT NULL) AS late_rate,\n"
+            "       COUNT(*) AS orders\n"
+            "FROM `new-project-495419.cymbal_retail.marketplace_orders`\n"
+            "WHERE order_status = 'delivered'\n"
+            "  AND order_purchase_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 180 DAY)\n"
+            "GROUP BY month ORDER BY month"
         ),
         "rows": [
-            {"product": "Indestructable Aluminum Aluma Wallet - RED",                  "revenue": 14288.00},
-            {"product": "GENUINE LEATHER SNAP ON STUDDED WHITE PIANO BELT",            "revenue": 11945.50},
-            {"product": "100% Cowhide Leather Black Leather Belt Snap on Belt Strap",  "revenue":  9802.10},
-            {"product": "100% Genuine Leather Bi-fold Badge Holder Black",             "revenue":  8714.45},
-            {"product": "Set of 2 Replacement Insert for Checkbook Wallets",           "revenue":  7660.80},
-            {"product": "Wayfarer Style Sunglasses Dark Lens Black Frame",             "revenue":  7012.30},
-            {"product": "100% Silk Knit Black Skinny Tie",                             "revenue":  6190.15},
-            {"product": "1 1/2 In. Original Perry Suspenders",                         "revenue":  5874.05},
-            {"product": "Set of 4 Glitter Cotton Stretch Headbands",                   "revenue":  4988.00},
-            {"product": "ONE Satin Headband",                                          "revenue":  4502.75},
+            {"month": "2025-12", "late_rate": 0.062, "orders":  8124},
+            {"month": "2026-01", "late_rate": 0.071, "orders":  8842},
+            {"month": "2026-02", "late_rate": 0.069, "orders":  8531},
+            {"month": "2026-03", "late_rate": 0.077, "orders":  9018},
+            {"month": "2026-04", "late_rate": 0.081, "orders":  9412},
+            {"month": "2026-05", "late_rate": 0.064, "orders":  9106},
         ],
-        "agent_used": "cymbal_sales_agent",
+        "agent_used": "cymbal_customer_experience_agent",
         "path_taken": "agent_route",
-        "confidence": 0.93,
-        "latency_ms": 1900,
-        "tables_used": ["order_items", "products"],
+        "confidence": 0.94,
+        "latency_ms": 2100,
+        "tables_used": ["marketplace_orders"],
         "citations": [
-            _cit("agent_rule", "Sales Analytics agent",
-                 "Routed to this agent (covers orders, order_items, products, users)."),
-            _cit("verified_query", "Top products by quarter revenue",
-                 "Verified template, reused 14× in JOBS history."),
-            _cit("table", "order_items",
-                 "`new-project-495419.cymbal_retail.order_items`"),
-            _cit("table", "products",
-                 "`new-project-495419.cymbal_retail.products`"),
+            _cit("agent_rule", "Customer Experience agent — late delivery rule",
+                 "Agent system_instruction defines: late = order_delivered_customer_date > order_estimated_delivery_date. "
+                 "This rule was applied to compute the rate consistently across months."),
+            _cit("verified_query", "Late delivery rate by month",
+                 "Recognized pattern from INFORMATION_SCHEMA.JOBS — run 12× by analysts in the last 30 days. "
+                 "The CX agent picked this template as a verified query."),
+            _cit("table", "marketplace_orders",
+                 "`new-project-495419.cymbal_retail.marketplace_orders` — filtered to delivered orders."),
         ],
     },
 
